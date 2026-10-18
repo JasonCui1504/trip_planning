@@ -5,7 +5,7 @@ import { CATEGORY_ICON, Icon } from "../icons.tsx";
 
 export function Thumb({ hue = 180, category }: { hue?: number; category: Offer["category"] | "custom" }) {
   return (
-    <div className="thumb" style={{ background: `linear-gradient(135deg, hsl(${hue} 60% 55%), hsl(${(hue + 40) % 360} 65% 40%))` }}>
+    <div className="thumb" style={{ background: `linear-gradient(135deg, hsl(${hue} 28% 34%), hsl(${(hue + 40) % 360} 32% 20%))` }}>
       <Icon name={CATEGORY_ICON[category]} size={22} />
     </div>
   );

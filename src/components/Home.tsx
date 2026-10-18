@@ -26,6 +26,7 @@ export function Home() {
     <div className="home">
       <section className="hero card">
         <div>
+          <span className="eyebrow">Trip planning</span>
           <h1>Plan the whole trip in one place.</h1>
           <p className="muted">
             Search flights, stays, activities, rental cars and restaurants side by side, save the options you like to a trip board, then book and track
@@ -36,7 +37,7 @@ export function Home() {
       </section>
 
       <section>
-        <h2 className="section-title">Your trips</h2>
+        <h2 className="section-title eyebrow-dot">Your trips</h2>
         {error && <p className="error">{error}</p>}
         {trips?.length === 0 && <p className="muted empty">No trips yet — create one above to open its workshop.</p>}
         <div className="trip-grid">
