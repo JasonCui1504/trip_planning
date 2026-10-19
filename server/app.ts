@@ -14,7 +14,9 @@ import {
   type Watch,
 } from "../shared/types.ts";
 import type { TripStore } from "./db.ts";
+import type { EditCatalog } from "./edit.ts";
 import type { Maps } from "./maps.ts";
+import { ProviderInputError } from "./providers/serpapi.ts";
 import type { Registry } from "./providers/index.ts";
 import { checkWatch, localToday, refreshWatches } from "./watch.ts";
 import { searchPlaces } from "./providers/mock/places.ts";
@@ -40,6 +42,7 @@ export interface AppDeps {
   store: TripStore;
   registry: Registry;
   maps: Maps;
+  edit: EditCatalog;
   /** Injectable clock so tests can simulate several days of price checks. */
   today?: () => string;
 }
@@ -77,7 +80,7 @@ function validateScenarios(value: unknown, trip: Trip): Scenario[] {
   });
 }
 
-export function createApp({ store, registry, maps, today = localToday }: AppDeps) {
+export function createApp({ store, registry, maps, edit, today = localToday }: AppDeps) {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
@@ -104,11 +107,20 @@ export function createApp({ store, registry, maps, today = localToday }: AppDeps
     const category = req.params.category as Category;
     if (!CATEGORIES.includes(category)) throw new NotFound(`Unknown category "${category}"`);
     const params = searchValidators[category](req.body ?? {});
-    const { provider, live, offers } = await registry.search(category, params, { asOf: today() });
+    const { provider, live, offers, insights } = await registry.search(category, params, { asOf: today() });
     const warnings: string[] = [];
     if (!live) warnings.push("Showing sample data. Prices and availability are illustrative; Book opens the real site pre-filled with your search.");
-    const body: SearchResponse = { category, provider, live, offers, warnings };
+    const body: SearchResponse = { category, provider, live, offers, warnings, insights };
     res.json(body);
+  });
+
+  // ----- Chase "The Edit" hotels -----
+
+  app.get("/api/edit", async (req, res) => {
+    const location = typeof req.query.location === "string" ? req.query.location : undefined;
+    const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    if (!location && !q) throw new ValidationError(`Pass "location" and/or "q"`);
+    res.json(await edit.search({ location, q }));
   });
 
   // ----- Maps -----
@@ -328,7 +340,7 @@ export function createApp({ store, registry, maps, today = localToday }: AppDeps
   app.use("/api", (_req, _res, next) => next(new NotFound("Not found")));
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof ValidationError) return void res.status(400).json({ error: err.message });
+    if (err instanceof ValidationError || err instanceof ProviderInputError) return void res.status(400).json({ error: err.message });
     if (err instanceof NotFound) return void res.status(404).json({ error: err.message });
     if (err instanceof SyntaxError) return void res.status(400).json({ error: "Invalid JSON body" });
     console.error(err);

@@ -4,13 +4,33 @@ import { CATEGORIES, offerToItem, type Offer, type SearchResponse, type Trip } f
 import { createApp } from "../server/app.ts";
 import { config } from "../server/config.ts";
 import { TripStore } from "../server/db.ts";
+import { createEditCatalog, parseEditPage, sameHotel } from "../server/edit.ts";
 import { createMaps, decodePolyline } from "../server/maps.ts";
+import { editPage } from "./fixtures/edit.ts";
+import { googleFlights, googleHotels } from "./fixtures/serpapi.ts";
 import { createRegistry } from "../server/providers/index.ts";
 import type { Scenario, Watch } from "../shared/types.ts";
 
 const noKeys = Object.fromEntries(Object.keys(config.keys).map((k) => [k, ""])) as typeof config.keys;
-const makeApp = (today = () => "2027-01-10") =>
-  createApp({ store: new TripStore(null), registry: createRegistry(noKeys), maps: createMaps({ offline: true }), today });
+const fakeEdit = () => createEditCatalog({ cacheFile: null, fetch: async () => new Response(editPage) });
+const makeApp = (today = () => "2027-01-10") => {
+  const edit = fakeEdit();
+  return createApp({ store: new TripStore(null), registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, today });
+};
+
+/** An app whose live providers are on, answered by canned SerpApi responses. */
+function makeLiveApp() {
+  const calls: URL[] = [];
+  const fetchImpl = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    const engine = url.searchParams.get("engine");
+    return new Response(JSON.stringify(engine === "google_flights" ? googleFlights : googleHotels));
+  }) as typeof fetch;
+  const edit = fakeEdit();
+  const registry = createRegistry({ ...noKeys, SERPAPI_API_KEY: "test-key" }, { fetch: fetchImpl, edit });
+  return { app: createApp({ store: new TripStore(null), registry, maps: createMaps({ offline: true }), edit, today: () => "2027-01-10" }), calls };
+}
 
 const tripInput = { name: "Tokyo spring", origin: "New York", destination: "Tokyo", startDate: "2027-04-01", endDate: "2027-04-08", travelers: 2, budget: 6000, currency: "USD" };
 
@@ -196,5 +216,77 @@ describe("scenarios", () => {
     expect((after.scenarios as Scenario[])[0].itemIds).toEqual([]);
 
     await request(app).patch(`/api/trips/${trip.id}`).send({ scenarios: [{ name: "" }] }).expect(400);
+  });
+});
+
+describe("live providers (SerpApi)", () => {
+  it("maps Google Flights results and price insights", async () => {
+    const { app, calls } = makeLiveApp();
+    const res = await request(app).post("/api/search/flights").send({ ...searches.flights, origin: "San Francisco", destination: "NRT" }).expect(200);
+    const body = res.body as SearchResponse;
+    expect(body.live).toBe(true);
+    expect(body.provider).toBe("Google Flights (SerpApi)");
+    expect(calls[0].searchParams.get("departure_id")).toBe("SFO");
+    expect(calls[0].searchParams.get("type")).toBe("1");
+    expect(body.offers).toHaveLength(2);
+    const [nonstop, oneStop] = body.offers;
+    expect(nonstop).toMatchObject({ title: "United · Nonstop", totalPrice: { amount: 1840 }, price: { amount: 920 }, durationMinutes: 690 });
+    expect(nonstop.legs![0]).toMatchObject({ from: "SFO", to: "NRT", depart: "2027-04-01T11:05", arrive: "2027-04-02T14:35", stops: 0 });
+    expect(nonstop.tags).toContain("Google best");
+    expect(oneStop.legs![0]).toMatchObject({ stops: 1, stopCities: ["SEA"], carrier: "Alaska + Japan Airlines" });
+    expect(body.insights[0]).toMatch(/low right now \(usually \$1,500–\$2,300\)/);
+  });
+
+  it("asks for an airport code when it can't work one out", async () => {
+    const { app } = makeLiveApp();
+    const res = await request(app).post("/api/search/flights").send({ ...searches.flights, origin: "Atlantis" }).expect(400);
+    expect(res.body.error).toMatch(/airport code/);
+  });
+
+  it("maps Google Hotels with per-site prices and Chase Edit badges", async () => {
+    const { app } = makeLiveApp();
+    const res = await request(app).post("/api/search/hotels").send(searches.hotels).expect(200);
+    const [andaz, gracery, ...rest] = (res.body as SearchResponse).offers;
+    expect(rest).toHaveLength(0); // the property without a rate is dropped
+    expect(andaz).toMatchObject({ title: "Andaz Tokyo Toranomon Hills", price: { amount: 610 }, totalPrice: { amount: 4270 }, rating: 4.7, start: "2027-04-01T15:00", end: "2027-04-08T12:00" });
+    expect(andaz.priceSources!.map((p) => [p.source, p.amount])).toEqual([["Hotels.com", 4186], ["Expedia.com", 4235], ["Hyatt", 4270]]);
+    expect(andaz.edit).toMatchObject({ brand: "Hyatt", selectCredit: false });
+    expect(andaz.tags[0]).toBe("Chase Edit");
+    expect(andaz.points![0]).toMatchObject({ lat: 35.6672, lon: 139.7497 });
+    expect(gracery.totalPrice.amount).toBe(140 * 7);
+    expect(gracery.edit).toBeUndefined();
+  });
+
+  it("price-watches live results across days", async () => {
+    const { app } = makeLiveApp();
+    const offer = (await request(app).post("/api/search/hotels").send(searches.hotels)).body.offers[0] as Offer;
+    const watch = (await request(app).post("/api/watches").send({ category: "hotels", params: searches.hotels, offerId: offer.id }).expect(201)).body as Watch;
+    expect(watch.provider).toBe("Google Hotels (SerpApi)");
+    const [refreshed] = (await request(app).post("/api/watches/refresh").expect(200)).body as Watch[];
+    expect(refreshed.history.at(-1)).toMatchObject({ amount: 4270, available: true });
+  });
+});
+
+describe("Chase Edit list", () => {
+  it("parses the edithotelsearch.com page", () => {
+    const hotels = parseEditPage(editPage);
+    expect(hotels).toHaveLength(3);
+    expect(hotels.find((h) => h.brand === "IHG")!.selectCredit).toBe(true);
+    expect(hotels.find((h) => h.brand === "Hyatt")!.selectCredit).toBe(false);
+    expect(() => parseEditPage("<html></html>")).toThrow(/format may have changed/);
+  });
+
+  it("matches hotel names loosely but not wrongly", () => {
+    expect(sameHotel("Andaz Tokyo Toranomon Hills", "Andaz Tokyo")).toBe(true);
+    expect(sameHotel("InterContinental Tokyo Bay", "Hotel InterContinental Tokyo Bay")).toBe(true);
+    expect(sameHotel("Andaz Tokyo Toranomon Hills", "Hotel Gracery Shinjuku")).toBe(false);
+    expect(sameHotel("Four Seasons Hotel Tokyo at Marunouchi", "Four Seasons Hotel Tokyo at Otemachi")).toBe(false);
+  });
+
+  it("lists Edit hotels for a destination", async () => {
+    const res = await request(makeApp()).get("/api/edit?location=Tokyo").expect(200);
+    expect(res.body.total).toBe(3);
+    expect(res.body.hotels.map((h: { name: string }) => h.name)).toEqual(["Andaz Tokyo Toranomon Hills", "InterContinental Tokyo Bay"]);
+    await request(makeApp()).get("/api/edit").expect(400);
   });
 });

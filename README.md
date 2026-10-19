@@ -43,11 +43,13 @@ server/
   app.ts                   Express routes (/api/search/:category, /api/trips, items)
   validate.ts              Request validation
   db.ts                    JSON-file store for trips and price watches (swap for SQLite/Postgres later)
+  edit.ts                  Chase Edit hotel list (fetched from edithotelsearch.com, cached weekly)
   maps.ts                  Geocoding (OpenStreetMap Nominatim) + driving routes (OSRM, or Google with a key)
   watch.ts                 Daily price-watch job
   config.ts                Env vars / API keys
   providers/
     index.ts               Provider registry: uses a live provider when its keys are set, otherwise the mock
+    serpapi.ts             Live Google Flights / Google Hotels via SerpApi
     links.ts               Deep links into real booking sites (+ the same search on other sites)
     mock/                  Mock flights, stays, activities, cars, dining + 36-city place data
 src/                       React app (Vite)
@@ -55,13 +57,31 @@ src/                       React app (Vite)
 tests/                     API tests
 ```
 
-## Connecting real providers (next step)
+## Real prices
 
-1. Copy `.env.example` to `.env`. All the keys in it are blank on purpose.
-2. Write an adapter that implements `SearchProvider` (see `server/providers/index.ts`) and maps the API's response into the shared `Offer` shape.
-3. Add it to `liveProviders` for its category. The registry switches to it once all of its `requiredKeys` are set and falls back to mock data otherwise. The badge in the header shows how many categories are live.
+All the real-price features run through one key, `SERPAPI_API_KEY`, from [SerpApi](https://serpapi.com). Its free tier has a few hundred searches a month; paid plans start around $25/month. Put the key in `.env`, restart, and the Flights and Stays tabs switch to live data. The header badge shows which categories are live.
 
-Candidates are already listed in `.env.example`: Amadeus (flights/hotels/activities), Duffel (flights), Booking.com affiliate, GetYourGuide, a car-rental API, and Yelp (dining).
+| What | Where it comes from |
+| --- | --- |
+| Flights | **Google Flights** results and prices, plus Google's "prices are low/typical/high" insight |
+| Hotels | **Google Hotels**: nightly and total price, rating, photos, map location, and the **price on each booking site** Google lists (often Hotels.com, Expedia, Booking.com and the hotel's own site) |
+| Price watch | The same live searches, re-run once a day (one search per watched item per day) |
+
+The adapters (`server/providers/serpapi.ts`) follow SerpApi's documented response format and are tested against sample responses in that format. They haven't been run against the live service yet, since there's no key in this repo.
+
+Not used:
+
+- **Amadeus Self-Service:** shut down in July 2026, so it's no longer an option for new apps.
+- **Scraping Hotels.com directly:** against its terms and blocked by bot protection. Google Hotels already reports the Hotels.com price for most properties.
+- **Bookable rates:** if you later want booking inside the app, the candidates are [LiteAPI](https://liteapi.travel) for hotels (free sandbox) and [Duffel](https://duffel.com) for flights.
+
+To add another provider, implement `SearchProvider` (see `server/providers/index.ts`), map its response into the shared `Offer` shape, and add it to `liveProviders`. A provider is used once all of its `requiredKeys` are set; otherwise its category falls back to mock data.
+
+## Chase "The Edit" hotels
+
+The Stays tab lists the Chase Sapphire Reserve Edit hotels at your destination. The list comes from [edithotelsearch.com](https://edithotelsearch.com/), a community site that isn't affiliated with Chase. Its brand list flags the hotels that also get the 2026 $250 Select Hotels credit. Live hotel results that are in the Edit collection get a **Chase Edit** badge.
+
+The server fetches the list on first use and caches it in `data/edit-hotels.json` for a week. If the site can't be reached, the cached copy is used. Always confirm on Chase Travel before booking.
 
 ## Maps & driving times
 

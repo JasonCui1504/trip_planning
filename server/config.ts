@@ -10,8 +10,7 @@ export const config = {
   /** How often the price watcher wakes up to check for stale watches. */
   watchIntervalMinutes: Number(env("WATCH_INTERVAL_MINUTES") || 60),
   keys: {
-    AMADEUS_CLIENT_ID: env("AMADEUS_CLIENT_ID"),
-    AMADEUS_CLIENT_SECRET: env("AMADEUS_CLIENT_SECRET"),
+    SERPAPI_API_KEY: env("SERPAPI_API_KEY"),
     DUFFEL_API_KEY: env("DUFFEL_API_KEY"),
     BOOKING_AFFILIATE_ID: env("BOOKING_AFFILIATE_ID"),
     GETYOURGUIDE_API_KEY: env("GETYOURGUIDE_API_KEY"),

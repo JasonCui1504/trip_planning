@@ -418,3 +418,25 @@ input[type="checkbox"] { accent-color: var(--primary); }
 }
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.35); }
 .piece-warn { margin: 0; }
+
+/* ---------- Live hotel prices & Chase Edit ---------- */
+img.thumb { object-fit: cover; border: 1px solid var(--border); }
+.tag-edit { background: rgb(143 179 217 / 14%); color: #a9c6e6; border-color: rgb(143 179 217 / 35%); }
+.price-sources { display: flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; align-items: center; margin-top: 0.5rem; }
+.price-source { padding: 0.12rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); text-decoration: none; }
+.price-source strong { color: var(--text); font-weight: 500; }
+.price-source:hover { border-color: var(--primary-dim); }
+.price-source.lowest { border-color: var(--primary-dim); background: var(--primary-soft); }
+.price-source.lowest strong { color: var(--primary-text); }
+.notice-insight { border-left-color: var(--primary); }
+.notice-insight svg { color: var(--primary-text); }
+.edit-panel { padding: 0.8rem 1rem; display: grid; gap: 0.6rem; }
+.edit-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; width: 100%; background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.edit-head .eyebrow { margin-bottom: 0.15rem; color: #a9c6e6; }
+.edit-count { display: block; font-size: 0.95rem; }
+.edit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; max-height: 420px; overflow-y: auto; }
+.edit-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.6rem; align-items: center; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-left: 2px solid #8fb3d9; border-radius: var(--radius); background: var(--bg); }
+.edit-actions { display: flex; gap: 0.35rem; align-items: center; }
+@media (max-width: 640px) {
+  .edit-list li { grid-template-columns: 1fr; }
+}

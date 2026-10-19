@@ -3,7 +3,9 @@ import type { Offer, TripItem } from "../../shared/types.ts";
 import { duration, money, shortDate, time } from "../format.ts";
 import { CATEGORY_ICON, Icon } from "../icons.tsx";
 
-export function Thumb({ hue = 180, category }: { hue?: number; category: Offer["category"] | "custom" }) {
+export function Thumb({ hue = 180, category, imageUrl }: { hue?: number; category: Offer["category"] | "custom"; imageUrl?: string }) {
+  const [broken, setBroken] = useState(false);
+  if (imageUrl && !broken) return <img className="thumb" src={imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} />;
   return (
     <div className="thumb" style={{ background: `linear-gradient(135deg, hsl(${hue} 28% 34%), hsl(${(hue + 40) % 360} 32% 20%))` }}>
       <Icon name={CATEGORY_ICON[category]} size={22} />
@@ -11,14 +13,14 @@ export function Thumb({ hue = 180, category }: { hue?: number; category: Offer["
   );
 }
 
-const HIGHLIGHT_TAGS = new Set(["Cheapest", "Fastest", "Best value", "Likely to sell out", "Local favourite"]);
+const HIGHLIGHT_TAGS = new Set(["Cheapest", "Fastest", "Best value", "Google best", "Likely to sell out", "Local favourite"]);
 
 export function ResultCard({ offer, saved, comparing, watching, onSave, onBook, onToggleCompare, onWatch }: { offer: Offer; saved?: TripItem; comparing: boolean; watching: boolean; onSave: () => void; onBook: () => void; onToggleCompare: () => void; onWatch: () => void }) {
   const [open, setOpen] = useState(false);
 
   return (
     <article className={`result card ${comparing ? "is-comparing" : ""}`}>
-      <Thumb hue={offer.imageHue} category={offer.category} />
+      <Thumb hue={offer.imageHue} category={offer.category} imageUrl={offer.imageUrl} />
       <div className="result-body">
         <div className="result-title-row">
           <h3>{offer.title}</h3>
@@ -56,7 +58,7 @@ export function ResultCard({ offer, saved, comparing, watching, onSave, onBook, 
 
         <div className="tags">
           {offer.tags.map((t) => (
-            <span key={t} className={`tag ${HIGHLIGHT_TAGS.has(t) ? "tag-hot" : ""}`}>
+            <span key={t} className={`tag ${t.startsWith("Chase Edit") ? "tag-edit" : HIGHLIGHT_TAGS.has(t) ? "tag-hot" : ""}`}>
               {t}
             </span>
           ))}
@@ -64,6 +66,17 @@ export function ResultCard({ offer, saved, comparing, watching, onSave, onBook, 
             {open ? "Hide details" : "Details"}
           </button>
         </div>
+
+        {offer.priceSources && offer.priceSources.length > 0 && (
+          <div className="price-sources small">
+            <span className="muted">Prices by site (whole stay):</span>
+            {offer.priceSources.slice(0, 6).map((p, i) => (
+              <a key={p.source} className={`price-source ${i === 0 ? "lowest" : ""}`} href={p.link ?? offer.bookingUrl} target="_blank" rel="noreferrer" title={p.freeCancellation ? "Free cancellation" : undefined}>
+                {p.source} <strong>{money({ amount: p.amount, currency: offer.totalPrice.currency })}</strong>
+              </a>
+            ))}
+          </div>
+        )}
 
         {offer.altLinks && offer.altLinks.length > 1 && (
           <p className="alt-links small">

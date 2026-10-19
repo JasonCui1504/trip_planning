@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import { CATEGORIES, type Category, type Offer, type SearchParamsMap, type SearchResponse, type Trip } from "../../shared/types.ts";
+import { CATEGORIES, type Category, type EditHotel, type Offer, type SearchParamsMap, type SearchResponse, type Trip } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { CATEGORY_LABEL, money } from "../format.ts";
 import { CATEGORY_ICON, Icon } from "../icons.tsx";
@@ -47,7 +47,7 @@ function sortOffers(offers: Offer[], key: SortKey): Offer[] {
 }
 
 function score(o: Offer): number {
-  const flagged = o.tags.includes("Best value") ? 3 : o.tags.some((t) => t === "Cheapest" || t === "Fastest") ? 1 : 0;
+  const flagged = o.tags.includes("Best value") || o.tags.includes("Google best") ? 3 : o.tags.some((t) => t === "Cheapest" || t === "Fastest") ? 1 : 0;
   return flagged + (o.rating ?? 4) - Math.log10(o.totalPrice.amount + 1) * 0.6;
 }
 
@@ -137,10 +137,37 @@ export function SearchPanel({ trip, state, setState, actions }: { trip: Trip; st
 
       {error && <p className="error">{error}</p>}
 
+      {category === "hotels" && (
+        <EditPanel
+          location={(params as SearchParamsMap["hotels"]).location || trip.destination}
+          dates={params as SearchParamsMap["hotels"]}
+          live={Boolean(state.results.hotels?.live)}
+          onCheckPrice={(name, city) => runSearch({ ...(params as SearchParamsMap["hotels"]), location: `${name}, ${city}` })}
+          onSaveIdea={(hotel, url) =>
+            actions.addItem({
+              category: "hotels",
+              status: "idea",
+              title: hotel.name,
+              subtitle: `Chase Edit · ${hotel.brand}${hotel.selectCredit ? " · $250 Select credit" : ""} · ${hotel.location}`,
+              location: hotel.location,
+              provider: "Chase Edit list",
+              bookingUrl: url,
+              cost: { amount: 0, currency: trip.currency },
+            })
+          }
+          savedTitles={new Set(trip.items.filter((i) => i.category === "hotels").map((i) => i.title))}
+        />
+      )}
+
       {response ? (
         <>
           {response.warnings.map((w) => (
             <p key={w} className="notice">
+              <Icon name="sparkle" size={14} /> {w}
+            </p>
+          ))}
+          {response.insights?.map((w) => (
+            <p key={w} className="notice notice-insight">
               <Icon name="sparkle" size={14} /> {w}
             </p>
           ))}
@@ -331,5 +358,80 @@ function BookModal({ offer, trip, existing, actions, onClose }: { offer: Offer; 
         </div>
       </div>
     </Modal>
+  );
+}
+
+function EditPanel({ location, dates, live, onCheckPrice, onSaveIdea, savedTitles }: { location: string; dates: SearchParamsMap["hotels"]; live: boolean; onCheckPrice: (name: string, city: string) => void; onSaveIdea: (h: EditHotel, url: string) => void; savedTitles: Set<string> }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<{ hotels: EditHotel[]; total: number } | null>(null);
+  const city = location.split(",")[0].trim();
+
+  useEffect(() => {
+    if (!city) return;
+    let cancelled = false;
+    api.editHotels(city).then((d) => !cancelled && setData(d)).catch(() => !cancelled && setData(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [city]);
+
+  if (!data || data.total === 0) return null;
+  const googleUrl = (h: EditHotel) =>
+    `https://www.google.com/travel/search?q=${encodeURIComponent(`${h.name} ${h.location}`)}&checkin=${dates.checkIn}&checkout=${dates.checkOut}&adults=${dates.guests}`;
+
+  return (
+    <div className="card edit-panel">
+      <button className="edit-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span>
+          <span className="eyebrow">Chase Sapphire Reserve · The Edit</span>
+          <span className="edit-count">
+            {data.hotels.length ? `${data.hotels.length} Edit hotel${data.hotels.length === 1 ? "" : "s"} in ${city}` : `No Edit hotels found in ${city}`}
+          </span>
+        </span>
+        {data.hotels.length > 0 && <span className="link-btn small">{open ? "Hide" : "Show"}</span>}
+      </button>
+      {open && data.hotels.length > 0 && (
+        <>
+          <p className="muted small">
+            Edit stays come with perks such as daily breakfast and a property credit, plus your card's annual Edit credit. IHG, Omni, Virgin, Montage, Pendry, Minor and Pan Pacific
+            hotels also qualify for the extra 2026 Select Hotels credit. List from{" "}
+            <a href="https://edithotelsearch.com/" target="_blank" rel="noreferrer">
+              edithotelsearch.com
+            </a>{" "}
+            — not affiliated with Chase; confirm on Chase Travel before booking.
+          </p>
+          <ul className="edit-list">
+            {data.hotels.map((h) => (
+              <li key={h.name}>
+                <span className="piece-main">
+                  <span className="item-title">{h.name}</span>
+                  <span className="muted small">
+                    {h.brand} · {h.location}
+                  </span>
+                </span>
+                {h.selectCredit && <span className="tag tag-edit">$250 credit</span>}
+                <span className="edit-actions">
+                  {live && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => onCheckPrice(h.name, h.location)}>
+                      Live price
+                    </button>
+                  )}
+                  <a className="btn btn-ghost btn-sm" href={googleUrl(h)} target="_blank" rel="noreferrer">
+                    Google Hotels <Icon name="external" size={12} />
+                  </a>
+                  {savedTitles.has(h.name) ? (
+                    <span className="status-chip status-idea">Saved</span>
+                  ) : (
+                    <button className="btn btn-secondary btn-sm" onClick={() => onSaveIdea(h, googleUrl(h))}>
+                      <Icon name="plus" size={12} /> Idea
+                    </button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }

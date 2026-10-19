@@ -119,6 +119,7 @@ export interface Offer {
   details: Record<string, string>;
   bookingUrl: string;
   imageHue?: number; // used to render a placeholder thumbnail
+  imageUrl?: string;
   legs?: FlightLeg[];
   /** Map locations: airports for flights, the property for stays, etc. */
   points?: GeoPoint[];
@@ -126,6 +127,32 @@ export interface Offer {
   durationMinutes?: number;
   /** The same search on other sites, for comparison shopping. */
   altLinks?: ExternalLink[];
+  /** The same room priced by different booking sites (live hotel data only). */
+  priceSources?: PriceSource[];
+  /** Set when the hotel is in Chase's "The Edit" collection. */
+  edit?: EditInfo;
+}
+
+export interface PriceSource {
+  source: string;
+  /** Total for the stay when known, otherwise per night (see `unit`). */
+  amount: number;
+  unit: "total" | "per night";
+  link?: string;
+  freeCancellation?: boolean;
+}
+
+export interface EditInfo {
+  brand: string;
+  region: string;
+  /** Brand qualifies for the extra 2026 Select Hotels credit. */
+  selectCredit: boolean;
+}
+
+/** A hotel from Chase's "The Edit" list (via edithotelsearch.com). */
+export interface EditHotel extends EditInfo {
+  name: string;
+  location: string;
 }
 
 export interface SearchResponse {
@@ -134,6 +161,8 @@ export interface SearchResponse {
   live: boolean;
   offers: Offer[];
   warnings: string[];
+  /** Extra context from the provider, e.g. Google's "prices are low right now". */
+  insights: string[];
 }
 
 // ---------- Trips ----------

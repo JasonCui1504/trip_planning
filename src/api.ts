@@ -1,5 +1,6 @@
 import type {
   Category,
+  EditHotel,
   GeoPoint,
   GeoResult,
   Offer,
@@ -47,6 +48,9 @@ export const api = {
 
   geocode: (q: string) => request<GeoResult[]>("GET", `/api/geo/search?q=${encodeURIComponent(q)}`),
   route: (points: GeoPoint[]) => request<RouteResult>("POST", "/api/geo/route", { points }),
+
+  editHotels: (location: string) =>
+    request<{ hotels: EditHotel[]; total: number; fetchedAt: string | null; source: string }>("GET", `/api/edit?location=${encodeURIComponent(location)}`),
 
   watches: () => request<Watch[]>("GET", "/api/watches"),
   watch: <C extends Category>(category: C, params: SearchParamsMap[C], offerId: string, tripId?: string) =>
