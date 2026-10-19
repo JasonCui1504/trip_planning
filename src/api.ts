@@ -48,6 +48,9 @@ export const api = {
   createTrip: (input: TripInput) => request<Trip>("POST", "/api/trips", input),
   updateTrip: (id: string, patch: Partial<Trip>) => request<Trip>("PATCH", `/api/trips/${id}`, patch),
   deleteTrip: (id: string) => request<void>("DELETE", `/api/trips/${id}`),
+  travelBudget: () => request<{ url: string; savedLogin: boolean }>("GET", "/api/travel-budget"),
+  exportTravelBudget: (id: string, login: { username?: string; password?: string }) =>
+    request<Trip>("POST", `/api/trips/${id}/export/travel-budget`, login),
 
   addItem: (tripId: string, item: Partial<NewItem>) => request<TripItem>("POST", `/api/trips/${tripId}/items`, item),
   updateItem: (tripId: string, itemId: string, patch: Partial<TripItem>) =>

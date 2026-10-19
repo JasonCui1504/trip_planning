@@ -6,6 +6,7 @@ import { Icon, type IconName } from "../icons.tsx";
 import { href, navigate, type WorkspaceTab } from "../router.ts";
 import { Budget } from "./Budget.tsx";
 import { Checklist } from "./Checklist.tsx";
+import { ExportModal } from "./ExportModal.tsx";
 import { Itinerary } from "./Itinerary.tsx";
 import { ItemModal } from "./ItemModal.tsx";
 import { Modal } from "./Modal.tsx";
@@ -35,6 +36,7 @@ export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState("");
   const [editingTrip, setEditingTrip] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [editingItem, setEditingItem] = useState<TripItem | "new" | null>(null);
   // Search state lives here so results survive switching tabs.
   const [search, setSearch] = useState<SearchState>({ category: "flights", params: {}, results: {} as Partial<Record<Category, SearchResponse>> });
@@ -109,9 +111,14 @@ export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
               </span>
             )}
           </div>
-          <button className="btn btn-ghost" onClick={() => setEditingTrip(true)}>
-            Edit trip
-          </button>
+          <div className="trip-header-actions">
+            <button className="btn btn-ghost" onClick={() => setEditingTrip(true)}>
+              Edit trip
+            </button>
+            <button className="btn btn-secondary" onClick={() => setExporting(true)}>
+              <Icon name="external" size={14} /> Export to travel budget
+            </button>
+          </div>
         </div>
       </section>
 
@@ -160,6 +167,8 @@ export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
           </div>
         </Modal>
       )}
+
+      {exporting && <ExportModal trip={trip} onDone={setTrip} onClose={() => setExporting(false)} />}
 
       {editingItem && <ItemModal trip={trip} item={editingItem === "new" ? null : editingItem} actions={actions} onClose={() => setEditingItem(null)} />}
     </div>

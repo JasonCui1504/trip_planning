@@ -231,8 +231,8 @@ export function PriceWatch() {
         ))}
       </div>
       <p className="muted small">
-        Prices are re-checked automatically once a day while the app's server is running. In sample-data mode the prices are simulated; once a live provider is
-        connected the same dashboard tracks real fares.
+        Prices are re-checked automatically once a day while the app's server is running. Only results from a live source (flights once SerpApi is
+        connected, stays once Hotels.com is) can be watched.
       </p>
     </div>
   );

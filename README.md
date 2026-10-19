@@ -2,7 +2,7 @@
 
 One place to plan and book a trip. You search flights, stays, activities, rental cars and restaurants side by side, save the options you like to a trip board, compare them, then book and track everything on a day-by-day itinerary and budget.
 
-> **Prototype status:** every search category runs on a built-in **mock provider** for now, so the app works fully without API keys. Prices and availability are made up but realistic, and they stay the same for the same search. **Book** opens the real site (Google Flights, Booking.com, GetYourGuide, Kayak, Google Maps) pre-filled with your search. After you book there, you record the confirmation number back in the app.
+> **Real data only:** the app never shows made-up results. Flights show live Google Flights results once `SERPAPI_API_KEY` is set, and stays show live Hotels.com results once `RAPIDAPI_KEY` is set. Activities, cars and dining have no live source yet, so their tabs show no results, only buttons that run the same search on real sites (Kayak, Expedia, GetYourGuide, Viator, Google Maps, OpenTable…). After you book anywhere, record it on the trip board with **Add your own**. The **Setup** page in the app lists what's left to connect; the same list is under [Next steps](#next-steps) below.
 
 ## Quick start
 
@@ -60,7 +60,9 @@ You do this once:
    - `APP_PASSWORD`: the password you'll log in with (required)
    - `CRON_SECRET`: any long random string (run `openssl rand -hex 32` in Terminal to make one)
    - `APP_TIMEZONE`: e.g. `America/Los_Angeles`
-   - `SERPAPI_API_KEY`: optional, turns on live Google Flights and Hotels prices
+   - `SERPAPI_API_KEY`: optional, turns on live Google Flights prices
+   - `RAPIDAPI_KEY`: optional, turns on live Hotels.com prices
+   - `TRAVEL_BUDGET_USERNAME` / `TRAVEL_BUDGET_PASSWORD`: optional, your jascui.com travel budget login for **Export to travel budget** (otherwise you type it in the export dialog)
 4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**, then open the `*.vercel.app` link and log in.
 5. **Add your domain.** In **Settings → Domains**, add `trips.jascui.com`. Vercel shows one DNS record to create where jascui.com's DNS lives, normally a **CNAME** named `trips` pointing to `cname.vercel-dns.com`. If jascui.com's DNS is already on Vercel, this happens automatically. HTTPS is set up for you.
 
@@ -71,10 +73,12 @@ Data you have on your Mac (`data/trips.json`) doesn't move online automatically.
 ## What's in the app
 
 - **Trips:** destination, dates, travelers and budget. Every search form is pre-filled from these.
-- **Search & save:** tabs for Flights, Stays, Activities, Cars and Dining. You can sort results, filter them by tag and max price, and open details for each one. You can also tick up to 4 results and **compare** them in a side-by-side table.
+- **Search & save:** tabs for Flights, Stays, Activities, Cars and Dining. Categories with a live source show results you can sort, filter by tag and max price, and open for details; you can also tick up to 4 results and **compare** them side by side. Categories without one link out to the same search on real sites.
 - **Workshop:** build *scenarios*, i.e. different combinations of saved flights, cars, stays and activities plus drives, and compare their total cost, cost per person, time in the air, time on the road and estimated fuel side by side. **Suggest transfers** walks each scenario in time order (land, pick up the car, check in, activities, return flight) and adds the missing drives using real road routing. The map shows the flight arcs and the actual driving routes, with "On the ground" and "Whole trip" views.
-- **Price watch:** press **Watch price** on any flight, stay or car. The server re-checks each watched option once a day (and on demand), keeps a daily price history, and the dashboard shows the current price, change since the last check, change since you started watching, the low and high, and a chart with a table view.
-- **More booking sites:** every flight, stay and car links to the same search on other sites (Kayak, Skyscanner, Expedia, Hotels.com, Google Hotels, Airbnb, Rentalcars) for comparison shopping.
+- **Price watch:** press **Watch price** on any live flight or stay. The server re-checks each watched option once a day (and on demand), keeps a daily price history, and the dashboard shows the current price, change since the last check, change since you started watching, the low and high, and a chart with a table view.
+- **More booking sites:** every flight and stay links to the same search on other sites (Kayak, Skyscanner, Expedia, Hotels.com, Google Hotels, Airbnb) for comparison shopping.
+- **Export to travel budget:** sends a trip to [jascui.com/travel_budget](https://www.jascui.com/travel_budget). See [below](#export-to-the-travel-budget).
+- **Setup:** a table of the steps left to connect real data, with the free API for each and whether it's done.
 - **Trip board:** a panel that stays next to the search results and holds everything you've saved, grouped as *Idea → Shortlisted → Booked*. **Add your own** records things booked elsewhere (trains, tickets, reservations).
 - **Book flow:** **Book** opens the provider in a new tab. A dialog then asks for the confirmation number and the final price, and marks the item as booked.
 - **Itinerary:** one card per day showing check-ins and check-outs, flights (including the return leg), activities and dinners, plus which hotel you sleep at each night. Items with no date sit in an Unscheduled list until you assign them a day.
@@ -95,37 +99,81 @@ server/
   vercel.ts                Vercel entry point (bundled to build/server.mjs; served by api/index.js)
   edit.ts                  Chase Edit hotel list (fetched from edithotelsearch.com, cached weekly)
   maps.ts                  Geocoding (OpenStreetMap Nominatim) + driving routes (OSRM, or Google with a key)
+  places.ts                36 common destinations: airport code + coordinates, city centre (autocomplete, offline geocoding)
   watch.ts                 Daily price-watch job
+  travelBudget.ts          Export a trip to jascui.com/travel_budget through its API
   config.ts                Env vars / API keys
   providers/
-    index.ts               Provider registry: uses a live provider when its keys are set, otherwise the mock
-    serpapi.ts             Live Google Flights / Google Hotels via SerpApi
+    index.ts               Provider registry: uses a live provider when its keys are set, otherwise returns no results
+    serpapi.ts             Live Google Flights via SerpApi
+    hotelscom.ts           Live Hotels.com stays via the Hotels.com Provider API (RapidAPI)
     links.ts               Deep links into real booking sites (+ the same search on other sites)
-    mock/                  Mock flights, stays, activities, cars, dining + 36-city place data
 src/                       React app (Vite)
-  components/              Home, Workspace, SearchPanel, TripBoard, Itinerary, Budget, Checklist, …
+  components/              Home, Workspace, SearchPanel, TripBoard, Itinerary, Budget, Checklist, Setup, …
 tests/                     API tests
 ```
 
 ## Real prices
 
-All the real-price features run through one key, `SERPAPI_API_KEY`, from [SerpApi](https://serpapi.com). Its free tier has a few hundred searches a month; paid plans start around $25/month. Put the key in `.env`, restart, and the Flights and Stays tabs switch to live data. The header badge shows which categories are live.
+Each category with real data has its own source:
 
-| What | Where it comes from |
-| --- | --- |
-| Flights | **Google Flights** results and prices, plus Google's "prices are low/typical/high" insight |
-| Hotels | **Google Hotels**: nightly and total price, rating, photos, map location, and the **price on each booking site** Google lists (often Hotels.com, Expedia, Booking.com and the hotel's own site) |
-| Price watch | The same live searches, re-run once a day (one search per watched item per day) |
+| What | Where it comes from | Key |
+| --- | --- | --- |
+| Flights | **Google Flights** via [SerpApi](https://serpapi.com): results, prices, and Google's "prices are low/typical/high" insight. SerpApi is used for flights only. | `SERPAPI_API_KEY` (free plan: 250 searches a month) |
+| Stays | **Hotels.com** via the [Hotels.com Provider API](https://rapidapi.com/tipsters/api/hotels-com-provider) on RapidAPI: nightly and total price, guest score, photo, map location, and a link straight to the hotel on Hotels.com | `RAPIDAPI_KEY` (free Basic plan) |
+| Chase Edit | [edithotelsearch.com](https://edithotelsearch.com/): the Edit hotel list for your destination, and a **Chase Edit** badge on Hotels.com results that are in it | None |
+| Price watch | The same live searches, re-run once a day | (uses the keys above) |
 
-The adapters (`server/providers/serpapi.ts`) follow SerpApi's documented response format and are tested against sample responses in that format. They haven't been run against the live service yet, since there's no key in this repo.
+How it fits together: `server/providers/index.ts` picks the provider for each category (`serpapiFlights` for flights, `hotelsComHotels` for stays) once its key is set. Every provider maps its response into the shared `Offer` shape, and hotel results then go through the Chase Edit list to get their badges. The Stays tab also lists the Edit hotels at your destination; **Check price** on one runs a Hotels.com search for that hotel by name and puts it first.
+
+A Hotels.com search is two requests: one to turn the destination into a Hotels.com region (cached), then the search itself. Hotels.com's official API (Expedia Rapid) is partner-only with an approval process, which is why this goes through RapidAPI.
+
+Both adapters (`serpapi.ts`, `hotelscom.ts`) follow their APIs' documented response formats and are tested against sample responses in that format. They haven't been run against the live services yet, since there are no keys in this repo.
 
 Not used:
 
+- **Google Hotels (SerpApi):** replaced by Hotels.com, so SerpApi's searches all go to flights.
 - **Amadeus Self-Service:** shut down in July 2026, so it's no longer an option for new apps.
-- **Scraping Hotels.com directly:** against its terms and blocked by bot protection. Google Hotels already reports the Hotels.com price for most properties.
+- **Scraping Hotels.com directly:** against its terms and blocked by bot protection.
 - **Bookable rates:** if you later want booking inside the app, the candidates are [LiteAPI](https://liteapi.travel) for hotels (free sandbox) and [Duffel](https://duffel.com) for flights.
 
-To add another provider, implement `SearchProvider` (see `server/providers/index.ts`), map its response into the shared `Offer` shape, and add it to `liveProviders`. A provider is used once all of its `requiredKeys` are set; otherwise its category falls back to mock data.
+## Export to the travel budget
+
+On any trip, **Export to travel budget** sends it to [jascui.com/travel_budget](https://www.jascui.com/travel_budget). It signs in with your travel budget username and password and uses that site's own API, so nothing on the photography site had to change. Type the login in the dialog (used once, never stored), or save it as `TRAVEL_BUDGET_USERNAME` / `TRAVEL_BUDGET_PASSWORD`.
+
+| Trip Workshop | Travel budget |
+| --- | --- |
+| Trip name and dates | A trip with the same name. The dates widen to cover anything just outside them, like a return flight the day after. |
+| Dated flights | Calendar events marked **transit**, from departure to arrival (an overnight flight runs to midnight). A return flight gets its own event at its departure time. |
+| Dated activities, dinners, custom items | Calendar events, **booked** or **not booked**, in half hours. Items without an end time get a default length (activities 3h, dinners 1.5h). |
+| Stays | Each night's accommodation, with link and address; booked stays are marked **Confirmed**. |
+| Rental cars | Each day's car; booked ones are marked **Confirmed**. |
+| Ideas, and items without a date | The trip's Ideas list. |
+| Bookings, totals, notes | The trip's doc, written on the first export only. |
+
+Booked stays and cars win a day over shortlisted ones. Each event's notes carry the confirmation number, cost and provider.
+
+Exporting again updates the same trip: it removes the events and ideas the last export added, clears the stay/car fields of days it no longer covers, and writes the current plan. Anything you added on the travel budget yourself stays. If you deleted the trip there, the next export creates a new one.
+
+To add another provider, implement `SearchProvider` (see `server/providers/index.ts`), map its response into the shared `Offer` shape, and add it to `liveProviders`. A provider is used once all of its `requiredKeys` are set; otherwise its category shows no results, only links to real sites.
+
+## Next steps
+
+Everything below is free. The app's **Setup** page shows the same table.
+
+| # | Step | What it unlocks | API / service | Cost | How | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Get a SerpApi key | Real Google Flights results, prices and price watch | [SerpApi](https://serpapi.com/users/sign_up) (flights only) | Free plan: 250 searches a month | Sign up, copy the key, set `SERPAPI_API_KEY` in Vercel's environment variables (or `.env`), redeploy | To do |
+| 2 | Get a RapidAPI key for Hotels.com | Real Hotels.com stays, Chase Edit badges on them, hotel price watch | [Hotels.com Provider API](https://rapidapi.com/tipsters/api/hotels-com-provider/pricing) on RapidAPI | Free Basic plan (check the monthly limit on its pricing tab) | Make a RapidAPI account, subscribe to Basic, set `RAPIDAPI_KEY` to your X-RapidAPI-Key, redeploy | To do |
+| 3 | Check flights and stays against the live services | Confidence the results are mapped correctly | SerpApi, Hotels.com Provider | A few searches from the free plans | Run one flight and one hotel search for a real trip and compare with Google Flights and Hotels.com | To do |
+| 4 | Save your travel budget login (optional) | Export without typing the password each time | jascui.com travel budget | Free | Set `TRAVEL_BUDGET_USERNAME` and `TRAVEL_BUDGET_PASSWORD`, or type them in the Export dialog | To do |
+| 5 | Plan your search budget | Not running out of free searches mid-month | SerpApi, RapidAPI | Free | A flight search uses 1 SerpApi search, a hotel search 2 RapidAPI requests. Each watched price is checked daily, so keep it to a handful of watches | To do |
+| 6 | Put the site online | trips.jascui.com | Vercel Hobby + Upstash Redis | Free plans | Already online | Done |
+| 7 | Connect activities | Real tours and attractions with prices | [Viator Partner API](https://partnerresources.viator.com/travel-commerce/affiliate/) (Basic Access) | Free: join the affiliate program; Basic Access needs no approval | Get the API key, then build `server/providers/viator.ts` and register it for `activities` | To do |
+| 8 | Connect restaurants | Real restaurants near your stay, filterable by cuisine (no prices or ratings) | [OpenStreetMap Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) | Free, no key | Build `server/providers/overpass.ts` that queries `amenity=restaurant` around the destination and register it for `dining` | To do |
+| 9 | Car rentals | Real rental prices | None found that is free | Rental price APIs are paid or partner-only | Keep using the Kayak, Expedia and Rentalcars links on the Cars tab, then record the booking with **Add your own** | No free option |
+| 10 | Maps and driving times | Road routes, drive times, place search | OSRM + Nominatim + OpenStreetMap tiles | Free, no key | Already connected | Done |
+| 11 | Chase Edit hotel list | Edit hotels at your destination, and badges on Hotels.com results | edithotelsearch.com | Free, no key | Already connected | Done |
 
 ## Chase "The Edit" hotels
 
@@ -146,7 +194,6 @@ To use Google Maps for routing instead, set `GOOGLE_MAPS_API_KEY` (Routes API). 
 ## Known prototype limits
 
 - Single user. Login is one shared password, not separate accounts.
-- Mock flight times ignore time zones.
 - Price watch only runs while the server is running. It catches up on its next start, but missed days aren't backfilled.
 - Drive legs are priced as fuel only. Tolls, parking and taxis/trains aren't modelled yet.
 - All prices are in USD.

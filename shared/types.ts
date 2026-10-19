@@ -96,7 +96,7 @@ export interface FlightLeg {
 }
 
 /**
- * A normalized search result. Every provider (mock or live) maps its own
+ * A normalized search result. Every live provider maps its own
  * response into this shape so the UI never has to care where data came from.
  */
 export interface Offer {
@@ -163,6 +163,8 @@ export interface SearchResponse {
   warnings: string[];
   /** Extra context from the provider, e.g. Google's "prices are low right now". */
   insights: string[];
+  /** The same search on real booking sites. Shown when no live source is connected. */
+  links: ExternalLink[];
 }
 
 // ---------- Trips ----------
@@ -264,8 +266,21 @@ export interface Trip {
   items: TripItem[];
   checklist: ChecklistItem[];
   scenarios: Scenario[];
+  /** Where this trip was last exported on the jascui.com travel budget. */
+  travelBudget?: TravelBudgetLink;
   createdAt: string;
   updatedAt: string;
+}
+
+/** What an export wrote to the travel budget, so the next export can replace it. */
+export interface TravelBudgetLink {
+  tripId: number;
+  url: string;
+  eventIds: number[];
+  ideaIds: number[];
+  /** Days whose stay or car fields the export filled. */
+  days: string[];
+  exportedAt: string;
 }
 
 export type TripInput = Pick<
@@ -275,6 +290,7 @@ export type TripInput = Pick<
 
 export interface ProviderStatus {
   category: Category;
+  /** The live source in use, or "Not connected". */
   provider: string;
   live: boolean;
   /** Env vars that would enable a live provider for this category. */
