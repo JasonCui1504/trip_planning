@@ -441,6 +441,40 @@ img.thumb { object-fit: cover; border: 1px solid var(--border); }
 .schedule-row .piece-main { flex: 1 1 200px; min-width: 0; }
 .schedule-times { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .schedule-times input { width: auto; }
+.grid-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+.grid-card { display: grid; gap: 0.3rem; text-decoration: none; color: inherit; }
+.grid-card:hover { border-color: var(--primary-dim); }
+.grid-card-best { color: var(--booked); font-weight: 500; }
+.grid-view { gap: 1.2rem; }
+.grid-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.grid-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.price-grid { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+.price-grid th, .price-grid td { padding: 0.35rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.price-grid thead th { font-weight: 500; white-space: nowrap; }
+.price-grid tbody th { white-space: nowrap; font-weight: 500; }
+.block { display: block; }
+.grid-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; width: 100%; min-width: 120px; min-height: 64px; padding: 0.45rem 0.55rem; border: 1px solid var(--border); border-radius: var(--radius); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.grid-cell:hover { border-color: var(--primary-dim); }
+.grid-cell.active { border-color: var(--primary); }
+.grid-cell.best { box-shadow: inset 0 0 0 1px var(--booked); }
+.grid-price { font-size: 1rem; font-weight: 500; }
+.grid-change { font-size: 0.72rem; }
+.grid-change.down { color: var(--booked); }
+.grid-change.up { color: var(--danger); }
+.grid-level { text-transform: capitalize; }
+.level-low { color: var(--booked); border-color: var(--booked); }
+.level-high { color: var(--danger); border-color: var(--danger); }
+.grid-best { color: var(--booked); font-weight: 500; white-space: nowrap; }
+.cell-detail { display: grid; gap: 0.8rem; }
+.cell-options { display: grid; gap: 0.4rem; }
+.cell-option { display: flex; gap: 0.8rem; justify-content: space-between; padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit; }
+.cell-option:hover { border-color: var(--primary-dim); }
+.cell-option .piece-side { display: flex; flex-direction: column; align-items: flex-end; gap: 0.15rem; white-space: nowrap; }
+.cell-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+.date-picker { display: grid; gap: 0.4rem; }
+.date-picker-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.date-picker-row input[type="number"] { width: 4rem; }
+.field-label { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
 .site-links { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .notice-insight svg { color: var(--primary-text); }
 .edit-panel { padding: 0.8rem 1rem; display: grid; gap: 0.6rem; }

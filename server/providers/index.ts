@@ -27,6 +27,8 @@ export interface ProviderEnv {
 export interface ProviderResult {
   offers: Offer[];
   insights?: string[];
+  /** Flights: Google's price level, typical range and price history for the route. */
+  priceInsight?: { level?: string; typical?: [number, number]; history: { date: string; amount: number }[] };
 }
 
 export interface SearchProvider<C extends Category> {
@@ -98,7 +100,7 @@ export function createRegistry(keys: Record<KeyName, string>, { live = liveProvi
         }
       }
     }
-    return { provider: provider.name, live: true, offers: result.offers, insights: result.insights ?? [], links };
+    return { provider: provider.name, live: true, offers: result.offers, insights: result.insights ?? [], links, priceInsight: result.priceInsight };
   }
 
   return {

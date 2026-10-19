@@ -46,5 +46,5 @@ export const googleFlights = {
       type: "Round trip",
     },
   ],
-  price_insights: { lowest_price: 1420, price_level: "low", typical_price_range: [1500, 2300] },
+  price_insights: { lowest_price: 1420, price_level: "low", typical_price_range: [1500, 2300], price_history: [[1797465600, 1980], [1797552000, 1910], [1797638400, 1840]] },
 };

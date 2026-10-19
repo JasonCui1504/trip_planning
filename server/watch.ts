@@ -1,5 +1,6 @@
 import type { Watch } from "../shared/types.ts";
 import type { Store } from "./db.ts";
+import { refreshGrids } from "./grids.ts";
 import type { Registry } from "./providers/index.ts";
 
 /**
@@ -58,7 +59,10 @@ export async function refreshWatches(store: Store, registry: Registry, asOf: str
 
 /** Background job: wakes up periodically and refreshes watches that are a day old. */
 export function startWatcher(store: Store, registry: Registry, intervalMinutes: number, today = localToday) {
-  const tick = () => refreshWatches(store, registry, today()).catch((err) => console.error("Price watcher:", err));
+  const tick = () =>
+    refreshWatches(store, registry, today())
+      .then(() => refreshGrids(store, registry, today(), 10 * 60_000))
+      .catch((err) => console.error("Price watcher:", err));
   void tick();
   const timer = setInterval(tick, intervalMinutes * 60_000);
   timer.unref();

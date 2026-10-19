@@ -72,6 +72,11 @@ Data you have on your Mac (`data/trips.json`) doesn't move online automatically.
 
 ## What's in the app
 
+- **Prices (the dashboard):** set up a *grid* once and compare every combination's cheapest price in one table, instead of opening a tab per search.
+  - **Flight grids:** several departure airports × several arrival airports × several dates, e.g. BWI and DCA to SFO and SJC on four dates is 16 cells. Each cell shows the cheapest fare, the cheapest nonstop, the change since the last check, and Google Flights' "low / typical / high" read. Click a cell for the flights (with Google Flights links), your own price history, and Google's price history for that route.
+  - **Hotel grids:** several places (cities or neighbourhoods) × several check-in dates on Hotels.com. Each cell shows the cheapest stay, the typical (median) price there, and the cheapest Chase Edit hotel; click for the options with Hotels.com links.
+  - **Tracking:** a grid can re-check itself every day, 2 days, 3 days or week (the daily cron job; up to ~45 seconds of searches a run, with the rest picked up next time), or only when you press **Check prices**. The form shows how many searches a check costs and roughly how many a month tracking will use. Grids are capped at 40 searches per check.
+
 - **Trips:** destination, dates, travelers and budget. Every search form is pre-filled from these.
 - **Search & save:** tabs for Flights, Stays, Activities, Cars and Dining. Categories with a live source show results you can sort, filter by tag and max price, and open for details; you can also tick up to 4 results and **compare** them side by side. Categories without one link out to the same search on real sites.
 - **Workshop:** build *scenarios*, i.e. different combinations of saved flights, cars, stays and activities plus drives, and compare their total cost, cost per person, time in the air, time on the road and estimated fuel side by side. **Suggest transfers** walks each scenario in time order (land, pick up the car, check in, activities, return flight) and adds the missing drives using real road routing. The map shows the flight arcs and the actual driving routes, with "On the ground" and "Whole trip" views.

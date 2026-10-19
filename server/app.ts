@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import {
   applyScenario,
   CATEGORIES,
+  gridCells,
   type Category,
   type ChecklistItem,
   type DriveLeg,
@@ -22,6 +23,7 @@ import { ProviderInputError } from "./providers/serpapi.ts";
 import { ProviderError, type Registry } from "./providers/index.ts";
 import { checkWatch, localToday, refreshWatches } from "./watch.ts";
 import { searchPlaces } from "./places.ts";
+import { checkCell, refreshGrids, validateGrid } from "./grids.ts";
 import { exportTrip, TravelBudgetError, type TravelBudgetOptions } from "./travelBudget.ts";
 import { searchValidators, validateTripInput, ValidationError } from "./validate.ts";
 
@@ -125,7 +127,8 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
     const authorized = cronSecret ? req.headers.authorization === `Bearer ${cronSecret}` : !auth.enabled;
     if (!authorized) return void res.status(401).json({ error: "Unauthorized" });
     const watches = await refreshWatches(store, registry, today());
-    res.json({ checked: watches.length, date: today() });
+    const cells = await refreshGrids(store, registry, today());
+    res.json({ checked: watches.length, cells, date: today() });
   });
 
   // Everything else needs a session when a password is set.
@@ -178,6 +181,47 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
       throw new ValidationError(`"points" must be 2–25 { lat, lon } objects`);
     }
     res.json(await maps.route(points));
+  });
+
+  // ----- Prices dashboard: grids of routes/areas × dates -----
+
+  const loadGrid = async (id: string) => {
+    const grid = await store.getGrid(id);
+    if (!grid) throw new NotFound(`Grid ${id} not found`);
+    return grid;
+  };
+
+  app.get("/api/grids", async (_req, res) => {
+    res.json(await store.listGrids());
+  });
+
+  app.post("/api/grids", async (req, res) => {
+    res.status(201).json(await store.saveGrid(validateGrid(req.body ?? {})));
+  });
+
+  app.get("/api/grids/:id", async (req, res) => {
+    res.json(await loadGrid(req.params.id));
+  });
+
+  app.patch("/api/grids/:id", async (req, res) => {
+    res.json(await store.saveGrid(validateGrid(req.body ?? {}, await loadGrid(req.params.id))));
+  });
+
+  app.delete("/api/grids/:id", async (req, res) => {
+    if (!(await store.removeGrid(req.params.id))) throw new NotFound(`Grid ${req.params.id} not found`);
+    res.status(204).end();
+  });
+
+  // Checks a few cells per request (the page sends batches), so each call stays well inside a hosted function's time limit.
+  app.post("/api/grids/:id/check", async (req, res) => {
+    const grid = await loadGrid(req.params.id);
+    const keys = req.body?.keys;
+    if (!Array.isArray(keys) || !keys.length || keys.length > 4) throw new ValidationError(`"keys" must list 1–4 cells`);
+    const specs = gridCells(grid).filter((s) => keys.includes(s.key));
+    const results = await Promise.all(specs.map(async (s) => [s.key, await checkCell(grid, s, registry, today())] as const));
+    // Re-read before saving so cells checked by another request in the meantime aren't lost.
+    const latest = await loadGrid(grid.id);
+    res.json(await store.saveGrid({ ...latest, cells: { ...latest.cells, ...Object.fromEntries(results) } }));
   });
 
   // ----- Price watch -----

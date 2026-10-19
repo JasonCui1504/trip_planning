@@ -354,3 +354,104 @@ export function offerToItem(offer: Offer, travelers: number, status: ItemStatus 
     altLinks: offer.altLinks,
   };
 }
+
+// ---------- Price grids (the Prices dashboard) ----------
+
+/**
+ * A set of searches compared side by side and re-checked over time: every
+ * origin × destination × departure date for flights, or every location × stay
+ * for hotels. Each combination is one cell.
+ */
+export interface PriceGrid {
+  id: string;
+  name: string;
+  kind: "flights" | "hotels";
+  /** Flights: departure airports. */
+  origins: string[];
+  /** Flights: arrival airports. Hotels: the places to compare (cities, neighbourhoods). */
+  destinations: string[];
+  /** Flights: departure dates. Hotels: check-in dates. */
+  dates: string[];
+  /** Nights until the return flight / check-out; 0 = one-way flight. */
+  nights: number;
+  /** Flights: adults. Hotels: guests. */
+  travelers: number;
+  rooms: number;
+  cabin: FlightSearch["cabin"];
+  /** Re-check automatically every this many days; 0 = only when you press Check. */
+  trackEveryDays: number;
+  cells: Record<string, GridCell>;
+  createdAt: string;
+}
+
+export interface GridOption {
+  title: string;
+  subtitle: string;
+  total: number;
+  /** Per night for stays, per person for flights. */
+  unitPrice: number;
+  unit: string;
+  tags: string[];
+  bookingUrl: string;
+  rating?: number;
+  durationMinutes?: number;
+  stops?: number;
+  edit?: EditInfo;
+}
+
+export interface GridPoint {
+  date: string;
+  /** Cheapest option that day. */
+  low: number;
+  /** Flights: cheapest nonstop. Hotels: cheapest Chase Edit stay. */
+  alt?: number;
+  /** Hotels: median of the results, to tell a cheap area from one cheap outlier. */
+  median?: number;
+}
+
+export interface GridCell {
+  /** One point per day this cell was checked. */
+  history: GridPoint[];
+  /** The cheapest few options from the latest check. */
+  options: GridOption[];
+  /** Flights: Google's own view of this route, from the same search. */
+  level?: string;
+  typical?: [number, number];
+  googleHistory?: PricePoint[];
+  error?: string;
+  checkedAt?: string;
+}
+
+export interface GridCellSpec {
+  key: string;
+  /** Row label: "BWI → SFO" or the hotel location. */
+  row: string;
+  date: string;
+  params: FlightSearch | HotelSearch;
+}
+
+const addDaysTo = (date: string, n: number) => {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Every cell of a grid, with the search it runs. */
+export function gridCells(grid: PriceGrid): GridCellSpec[] {
+  const out: GridCellSpec[] = [];
+  for (const date of grid.dates) {
+    if (grid.kind === "flights") {
+      for (const origin of grid.origins)
+        for (const destination of grid.destinations) {
+          const params: FlightSearch = { origin, destination, departDate: date, returnDate: grid.nights > 0 ? addDaysTo(date, grid.nights) : undefined, adults: grid.travelers, cabin: grid.cabin };
+          out.push({ key: `${origin}|${destination}|${date}`, row: `${origin} → ${destination}`, date, params });
+        }
+    } else {
+      for (const location of grid.destinations) {
+        const params: HotelSearch = { location, checkIn: date, checkOut: addDaysTo(date, Math.max(1, grid.nights)), guests: grid.travelers, rooms: grid.rooms };
+        out.push({ key: `${location}|${date}`, row: location, date, params });
+      }
+    }
+  }
+  return out;
+}

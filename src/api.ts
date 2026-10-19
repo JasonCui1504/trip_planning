@@ -5,6 +5,7 @@ import type {
   GeoResult,
   Offer,
   Place,
+  PriceGrid,
   ProviderStatus,
   RouteResult,
   SearchParamsMap,
@@ -62,6 +63,13 @@ export const api = {
 
   editHotels: (location: string) =>
     request<{ hotels: EditHotel[]; total: number; fetchedAt: string | null; source: string }>("GET", `/api/edit?location=${encodeURIComponent(location)}`),
+
+  grids: () => request<PriceGrid[]>("GET", "/api/grids"),
+  grid: (id: string) => request<PriceGrid>("GET", `/api/grids/${id}`),
+  createGrid: (grid: Partial<PriceGrid>) => request<PriceGrid>("POST", "/api/grids", grid),
+  updateGrid: (id: string, patch: Partial<PriceGrid>) => request<PriceGrid>("PATCH", `/api/grids/${id}`, patch),
+  deleteGrid: (id: string) => request<void>("DELETE", `/api/grids/${id}`),
+  checkGrid: (id: string, keys: string[]) => request<PriceGrid>("POST", `/api/grids/${id}/check`, { keys }),
 
   watches: () => request<Watch[]>("GET", "/api/watches"),
   watch: <C extends Category>(category: C, params: SearchParamsMap[C], offerId: string, tripId?: string) =>

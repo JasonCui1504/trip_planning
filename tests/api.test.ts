@@ -1,6 +1,6 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { CATEGORIES, offerToItem, type Offer, type SearchResponse, type Trip, type TripItem } from "../shared/types.ts";
+import { CATEGORIES, gridCells, offerToItem, type Offer, type PriceGrid, type SearchResponse, type Trip, type TripItem } from "../shared/types.ts";
 import { createApp } from "../server/app.ts";
 import { config } from "../server/config.ts";
 import { TripStore } from "../server/db.ts";
@@ -212,6 +212,65 @@ describe("scenarios", () => {
     expect((after.scenarios as Scenario[])[0].itemIds).toEqual([]);
 
     await request(app).patch(`/api/trips/${trip.id}`).send({ scenarios: [{ name: "" }] }).expect(400);
+  });
+});
+
+describe("price grids", () => {
+  const flightGrid = { kind: "flights", name: "Bay Area", origins: "sfo, SFO", destinations: ["NRT"], dates: ["2027-04-01", "2027-04-02"], nights: 7, travelers: 2, cabin: "economy", trackEveryDays: 1 };
+
+  it("checks every route × date and records the cheapest, nonstop and Google's view", async () => {
+    const { app, calls } = makeLiveApp();
+    const grid = (await request(app).post("/api/grids").send(flightGrid).expect(201)).body as PriceGrid;
+    expect(grid.origins).toEqual(["SFO"]); // de-duplicated and upper-cased
+    const keys = gridCells(grid).map((c) => c.key);
+    expect(keys).toEqual(["SFO|NRT|2027-04-01", "SFO|NRT|2027-04-02"]);
+
+    const checked = (await request(app).post(`/api/grids/${grid.id}/check`).send({ keys }).expect(200)).body as PriceGrid;
+    const cell = checked.cells["SFO|NRT|2027-04-01"];
+    // The one-stop is cheapest; the nonstop's price is kept alongside.
+    expect(cell.history).toEqual([{ date: "2027-01-10", low: 1420, alt: 1840 }]);
+    expect(cell.options.map((o) => [o.title, o.stops])).toEqual([["Alaska + Japan Airlines · 1 stop", 1], ["United · Nonstop", 0]]);
+    expect(cell).toMatchObject({ level: "low", typical: [1500, 2300] });
+    expect(cell.googleHistory!.map((p) => p.amount)).toEqual([1980, 1910, 1840]);
+    const serp = calls.filter((c) => c.url.host === "serpapi.com");
+    expect(serp.map((c) => c.url.searchParams.get("return_date"))).toEqual(["2027-04-08", "2027-04-09"]);
+
+    await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: [] }).expect(400);
+  });
+
+  it("compares hotel areas with the median and the cheapest Chase Edit stay", async () => {
+    const { app } = makeLiveApp();
+    const grid = (await request(app).post("/api/grids").send({ kind: "hotels", destinations: ["Tokyo"], dates: ["2027-04-01"], nights: 7, travelers: 2 }).expect(201)).body as PriceGrid;
+    const checked = (await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: ["Tokyo|2027-04-01"] })).body as PriceGrid;
+    const cell = checked.cells["Tokyo|2027-04-01"];
+    expect(cell.history[0]).toEqual({ date: "2027-01-10", low: 1002, alt: 4270, median: 2636 });
+    expect(cell.options.find((o) => o.edit)).toMatchObject({ title: "Andaz Tokyo Toranomon Hills", edit: { brand: "Hyatt" } });
+  });
+
+  it("re-checks tracked grids on schedule and keeps results through edits", async () => {
+    let day = "2027-01-10";
+    const { app } = makeLiveApp(() => day);
+    const grid = (await request(app).post("/api/grids").send(flightGrid)).body as PriceGrid;
+    await request(app).post("/api/grids").send({ ...flightGrid, trackEveryDays: 0 }); // not tracked: left alone
+    expect((await request(app).get("/api/cron/watch").expect(200)).body.cells).toBe(2);
+    expect((await request(app).get("/api/cron/watch")).body.cells).toBe(0); // already checked today
+    day = "2027-01-11";
+    expect((await request(app).get("/api/cron/watch")).body.cells).toBe(2);
+
+    const edited = (await request(app).patch(`/api/grids/${grid.id}`).send({ dates: ["2027-04-01", "2027-04-05"] }).expect(200)).body as PriceGrid;
+    expect(Object.keys(edited.cells)).toEqual(["SFO|NRT|2027-04-01"]);
+    expect(edited.cells["SFO|NRT|2027-04-01"].history.map((h) => h.date)).toEqual(["2027-01-10", "2027-01-11"]);
+  });
+
+  it("keeps grids within the free quotas and reports failures on the cell", async () => {
+    const app = makeApp();
+    const big = { ...flightGrid, origins: ["BWI", "DCA", "IAD"], destinations: ["SFO", "SJC", "OAK"], dates: ["2027-04-01", "2027-04-02", "2027-04-03", "2027-04-04", "2027-04-05"] };
+    expect((await request(app).post("/api/grids").send(big).expect(400)).body.error).toMatch(/45 searches per check/);
+    const grid = (await request(app).post("/api/grids").send(flightGrid)).body as PriceGrid;
+    const checked = (await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: ["SFO|NRT|2027-04-01"] })).body as PriceGrid;
+    expect(checked.cells["SFO|NRT|2027-04-01"]).toMatchObject({ history: [], error: "No live flight source is connected" });
+    await request(app).delete(`/api/grids/${grid.id}`).expect(204);
+    await request(app).get(`/api/grids/${grid.id}`).expect(404);
   });
 });
 

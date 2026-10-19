@@ -4,6 +4,7 @@ import { api, UNAUTHORIZED_EVENT } from "./api.ts";
 import { Login } from "./components/Login.tsx";
 import { Home } from "./components/Home.tsx";
 import { PriceWatch } from "./components/PriceWatch.tsx";
+import { Prices } from "./components/Prices.tsx";
 import { Setup } from "./components/Setup.tsx";
 import { Workspace } from "./components/Workspace.tsx";
 import { Icon } from "./icons.tsx";
@@ -41,6 +42,9 @@ export function App() {
           Trip Workshop
         </a>
         <nav className="topnav">
+          <a className={`topnav-link ${route.page === "prices" ? "active" : ""}`} href={href({ page: "prices" })}>
+            Prices
+          </a>
           <a className={`topnav-link ${route.page === "home" || route.page === "trip" ? "active" : ""}`} href={href({ page: "home" })}>
             Trips
           </a>
@@ -72,7 +76,7 @@ export function App() {
         )}
       </header>
       <main className="main">
-        {route.page === "trip" ? <Workspace key={route.id} id={route.id} tab={route.tab} /> : route.page === "watch" ? <PriceWatch /> : route.page === "setup" ? <Setup /> : <Home />}
+        {route.page === "trip" ? <Workspace key={route.id} id={route.id} tab={route.tab} /> : route.page === "watch" ? <PriceWatch /> : route.page === "setup" ? <Setup /> : route.page === "prices" ? <Prices id={route.id} /> : <Home />}
       </main>
     </div>
   );
