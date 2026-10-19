@@ -1,18 +1,16 @@
 import type { Category, Offer, ProviderStatus, SearchParamsMap } from "../../shared/types.ts";
 import type { EditCatalog } from "../edit.ts";
 import type { KeyName } from "../config.ts";
-import { searchActivities } from "./mock/activities.ts";
-import { searchCars } from "./mock/cars.ts";
-import { searchDining } from "./mock/dining.ts";
-import { searchFlights } from "./mock/flights.ts";
-import { searchHotels } from "./mock/lodging.ts";
+import { CATEGORIES } from "../../shared/types.ts";
+import { searchLinks } from "./links.ts";
 import { serpapiFlights, serpapiHotels } from "./serpapi.ts";
 
 /**
  * A search provider for one category. To connect a real API, write a module
  * that implements this interface (mapping the API's response into `Offer`s)
- * and register it in `liveProviders` below. When its credentials are missing
- * the registry falls back to the mock provider automatically.
+ * and register it in `liveProviders` below. When no provider for a category
+ * has its credentials, searches in that category return no results (never
+ * made-up ones), just links to run the same search on real sites.
  */
 export interface SearchContext {
   /** Today's date (YYYY-MM-DD); prices are quoted as of this day. */
@@ -37,19 +35,12 @@ export interface SearchProvider<C extends Category> {
   search(params: SearchParamsMap[C], ctx: SearchContext, env: ProviderEnv): Promise<Offer[] | ProviderResult>;
 }
 
-type ProviderMap = { [C in Category]: SearchProvider<C> };
 type LiveProviderMap = { [C in Category]: SearchProvider<C>[] };
 
-const mockProviders: ProviderMap = {
-  flights: { name: "Mock flights", requiredKeys: [], search: searchFlights },
-  hotels: { name: "Mock stays", requiredKeys: [], search: searchHotels },
-  activities: { name: "Mock experiences", requiredKeys: [], search: searchActivities },
-  cars: { name: "Mock rentals", requiredKeys: [], search: searchCars },
-  dining: { name: "Mock dining", requiredKeys: [], search: searchDining },
-};
+export const NOT_CONNECTED = "Not connected";
 
 // Real integrations, in order of preference. Each is used only once all of
-// its requiredKeys are set; otherwise the category falls back to mock data.
+// its requiredKeys are set; otherwise the category has no data source.
 const liveProviders: LiveProviderMap = {
   flights: [serpapiFlights],
   hotels: [serpapiHotels],
@@ -62,9 +53,9 @@ const liveProviders: LiveProviderMap = {
 const CANDIDATE_KEYS: Record<Category, KeyName[]> = {
   flights: ["SERPAPI_API_KEY"],
   hotels: ["SERPAPI_API_KEY"],
-  activities: ["GETYOURGUIDE_API_KEY"],
-  cars: ["RENTALCARS_API_KEY"],
-  dining: ["YELP_API_KEY"],
+  activities: [],
+  cars: [],
+  dining: [],
 };
 
 export interface RegistryOptions {
@@ -75,15 +66,16 @@ export interface RegistryOptions {
 }
 
 export function createRegistry(keys: Record<KeyName, string>, { live = liveProviders, fetch: fetchImpl = fetch, edit }: RegistryOptions = {}) {
-  function providerFor<C extends Category>(category: C): { provider: SearchProvider<C>; live: boolean } {
+  function providerFor<C extends Category>(category: C): SearchProvider<C> | undefined {
     const candidates = live[category] as SearchProvider<C>[];
-    const ready = candidates.find((p) => p.requiredKeys.every((k) => keys[k]));
-    return ready ? { provider: ready, live: true } : { provider: mockProviders[category] as SearchProvider<C>, live: false };
+    return candidates.find((p) => p.requiredKeys.every((k) => keys[k]));
   }
 
   /** Run a search with whichever provider is active for the category. */
   async function search<C extends Category>(category: C, params: SearchParamsMap[C], ctx: SearchContext) {
-    const { provider, live } = providerFor(category);
+    const links = searchLinks(category, params);
+    const provider = providerFor(category);
+    if (!provider) return { provider: NOT_CONNECTED, live: false, offers: [] as Offer[], insights: [] as string[], links };
     const raw = await provider.search(params, ctx, { keys, fetch: fetchImpl });
     const result: ProviderResult = Array.isArray(raw) ? { offers: raw } : raw;
     if (category === "hotels" && edit) {
@@ -96,16 +88,16 @@ export function createRegistry(keys: Record<KeyName, string>, { live = liveProvi
         }
       }
     }
-    return { provider: provider.name, live, offers: result.offers, insights: result.insights ?? [] };
+    return { provider: provider.name, live: true, offers: result.offers, insights: result.insights ?? [], links };
   }
 
   return {
     providerFor,
     search,
     status(): ProviderStatus[] {
-      return (Object.keys(mockProviders) as Category[]).map((category) => {
-        const { provider, live } = providerFor(category);
-        return { category, provider: provider.name, live, envKeys: CANDIDATE_KEYS[category] };
+      return CATEGORIES.map((category) => {
+        const provider = providerFor(category);
+        return { category, provider: provider?.name ?? NOT_CONNECTED, live: Boolean(provider), envKeys: CANDIDATE_KEYS[category] };
       });
     },
   };

@@ -2,7 +2,7 @@ import type { FlightLeg, FlightSearch, HotelSearch, Offer, PriceSource } from ".
 import { daysBetween } from "../dates.ts";
 import type { ProviderEnv, ProviderResult, SearchContext, SearchProvider } from "./index.ts";
 import { altLinks, links } from "./links.ts";
-import { airportPoint, resolvePlace } from "./mock/places.ts";
+import { airportPoint, resolvePlace } from "../places.ts";
 
 /**
  * Live flight and hotel prices via SerpApi (https://serpapi.com), which runs
@@ -37,7 +37,7 @@ export function toIata(text: string): string {
   const t = text.trim();
   if (/^[A-Za-z]{3}$/.test(t)) return t.toUpperCase();
   const place = resolvePlace(t);
-  if (place.country) return place.code;
+  if (place) return place.code;
   throw new ProviderInputError(`Use an airport code for "${t}" (e.g. SFO, NRT) — live flight search needs one.`);
 }
 
@@ -132,7 +132,7 @@ export function mapGoogleFlights(data: Record<string, unknown>, params: FlightSe
         altLinks: altLinks.flights(leg.from, leg.to, params.departDate, params.returnDate),
         imageHue: (leg.carrier.charCodeAt(0) * 37) % 360,
         legs: [leg],
-        points: [airportPoint(from), airportPoint(to)].filter((p) => p !== undefined),
+        points: [from && airportPoint(from), to && airportPoint(to)].filter((p) => p !== undefined),
         durationMinutes: it.total_duration,
       };
     });

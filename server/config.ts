@@ -15,11 +15,6 @@ export const config = {
   watchIntervalMinutes: Number(env("WATCH_INTERVAL_MINUTES") || 60),
   keys: {
     SERPAPI_API_KEY: env("SERPAPI_API_KEY"),
-    DUFFEL_API_KEY: env("DUFFEL_API_KEY"),
-    BOOKING_AFFILIATE_ID: env("BOOKING_AFFILIATE_ID"),
-    GETYOURGUIDE_API_KEY: env("GETYOURGUIDE_API_KEY"),
-    RENTALCARS_API_KEY: env("RENTALCARS_API_KEY"),
-    YELP_API_KEY: env("YELP_API_KEY"),
   },
 };
 

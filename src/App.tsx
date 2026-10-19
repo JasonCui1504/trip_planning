@@ -4,6 +4,7 @@ import { api, UNAUTHORIZED_EVENT } from "./api.ts";
 import { Login } from "./components/Login.tsx";
 import { Home } from "./components/Home.tsx";
 import { PriceWatch } from "./components/PriceWatch.tsx";
+import { Setup } from "./components/Setup.tsx";
 import { Workspace } from "./components/Workspace.tsx";
 import { Icon } from "./icons.tsx";
 import { href, useRoute } from "./router.ts";
@@ -40,19 +41,22 @@ export function App() {
           Trip Workshop
         </a>
         <nav className="topnav">
-          <a className={`topnav-link ${route.page !== "watch" ? "active" : ""}`} href={href({ page: "home" })}>
+          <a className={`topnav-link ${route.page === "home" || route.page === "trip" ? "active" : ""}`} href={href({ page: "home" })}>
             Trips
           </a>
           <a className={`topnav-link ${route.page === "watch" ? "active" : ""}`} href={href({ page: "watch" })}>
             Price watch
           </a>
+          <a className={`topnav-link ${route.page === "setup" ? "active" : ""}`} href={href({ page: "setup" })}>
+            Setup
+          </a>
         </nav>
         {providers.length > 0 && (
           <span
-            className={`pill ${liveCount ? "pill-live" : "pill-sample"}`}
+            className={`pill ${liveCount ? "pill-live" : "pill-off"}`}
             title={providers.map((p) => `${p.category}: ${p.provider}${p.live ? " (live)" : ""}`).join("\n")}
           >
-            {liveCount ? `${liveCount}/${providers.length} live providers` : "Sample data mode"}
+            {liveCount ? `${liveCount}/${providers.length} categories live` : "No live data connected"}
           </span>
         )}
         {auth.authRequired && (
@@ -68,7 +72,7 @@ export function App() {
         )}
       </header>
       <main className="main">
-        {route.page === "trip" ? <Workspace key={route.id} id={route.id} tab={route.tab} /> : route.page === "watch" ? <PriceWatch /> : <Home />}
+        {route.page === "trip" ? <Workspace key={route.id} id={route.id} tab={route.tab} /> : route.page === "watch" ? <PriceWatch /> : route.page === "setup" ? <Setup /> : <Home />}
       </main>
     </div>
   );

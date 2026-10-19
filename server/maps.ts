@@ -1,5 +1,5 @@
 import type { GeoPoint, GeoResult, RouteResult } from "../shared/types.ts";
-import { searchPlaces } from "./providers/mock/places.ts";
+import { searchPlaces } from "./places.ts";
 
 /**
  * Geocoding and driving directions.

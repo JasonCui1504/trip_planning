@@ -20,7 +20,7 @@ import type { Maps } from "./maps.ts";
 import { ProviderInputError } from "./providers/serpapi.ts";
 import type { Registry } from "./providers/index.ts";
 import { checkWatch, localToday, refreshWatches } from "./watch.ts";
-import { searchPlaces } from "./providers/mock/places.ts";
+import { searchPlaces } from "./places.ts";
 import { searchValidators, validateTripInput, ValidationError } from "./validate.ts";
 
 const DEFAULT_CHECKLIST = [
@@ -130,10 +130,10 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
     const category = req.params.category as Category;
     if (!CATEGORIES.includes(category)) throw new NotFound(`Unknown category "${category}"`);
     const params = searchValidators[category](req.body ?? {});
-    const { provider, live, offers, insights } = await registry.search(category, params, { asOf: today() });
+    const { provider, live, offers, insights, links } = await registry.search(category, params, { asOf: today() });
     const warnings: string[] = [];
-    if (!live) warnings.push("Showing sample data. Prices and availability are illustrative; Book opens the real site pre-filled with your search.");
-    const body: SearchResponse = { category, provider, live, offers, warnings, insights };
+    if (!live) warnings.push("No live data source is connected for this category yet, so there are no results to show. Run the same search on these sites:");
+    const body: SearchResponse = { category, provider, live, offers, warnings, insights, links };
     res.json(body);
   });
 

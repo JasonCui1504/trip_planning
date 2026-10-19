@@ -171,49 +171,62 @@ export function SearchPanel({ trip, state, setState, actions }: { trip: Trip; st
               <Icon name="sparkle" size={14} /> {w}
             </p>
           ))}
-          <div className="results-toolbar">
-            <span className="muted small">
-              {visible.length} of {response.offers.length} results · {response.provider}
-            </span>
-            <div className="toolbar-controls">
-              <label className="inline">
-                Max total
-                <input type="number" min={0} step={50} placeholder="Any" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
-              </label>
-              <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort results">
-                {SORTS.filter((s) => !s.only || s.only.includes(category)).map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {tagOptions.length > 0 && (
-            <div className="chips">
-              {tagOptions.map((t) => (
-                <button key={t} className={`chip ${tagFilter.includes(t) ? "active" : ""}`} onClick={() => setTagFilter((f) => (f.includes(t) ? f.filter((x) => x !== t) : [...f, t]))}>
-                  {t}
-                </button>
+          {!response.live && (
+            <div className="site-links">
+              {response.links.map((l) => (
+                <a key={l.label} className="btn btn-secondary btn-sm" href={l.url} target="_blank" rel="noreferrer">
+                  {l.label} <Icon name="external" size={14} />
+                </a>
               ))}
             </div>
           )}
-          <div className="results">
-            {visible.map((offer) => (
-              <ResultCard
-                key={offer.id}
-                offer={offer}
-                saved={savedByOffer.get(offer.id)}
-                comparing={compare.some((o) => o.id === offer.id)}
-                watching={watched.has(offer.id)}
-                onWatch={() => watch(offer)}
-                onSave={() => actions.saveOffer(offer)}
-                onBook={() => setBooking(offer)}
-                onToggleCompare={() => toggleCompare(offer)}
-              />
-            ))}
-            {visible.length === 0 && <p className="muted empty">No results match those filters.</p>}
-          </div>
+          {response.live && (
+            <>
+              <div className="results-toolbar">
+                <span className="muted small">
+                  {visible.length} of {response.offers.length} results · {response.provider}
+                </span>
+                <div className="toolbar-controls">
+                  <label className="inline">
+                    Max total
+                    <input type="number" min={0} step={50} placeholder="Any" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+                  </label>
+                  <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort results">
+                    {SORTS.filter((s) => !s.only || s.only.includes(category)).map((s) => (
+                      <option key={s.key} value={s.key}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {tagOptions.length > 0 && (
+                <div className="chips">
+                  {tagOptions.map((t) => (
+                    <button key={t} className={`chip ${tagFilter.includes(t) ? "active" : ""}`} onClick={() => setTagFilter((f) => (f.includes(t) ? f.filter((x) => x !== t) : [...f, t]))}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="results">
+                {visible.map((offer) => (
+                  <ResultCard
+                    key={offer.id}
+                    offer={offer}
+                    saved={savedByOffer.get(offer.id)}
+                    comparing={compare.some((o) => o.id === offer.id)}
+                    watching={watched.has(offer.id)}
+                    onWatch={() => watch(offer)}
+                    onSave={() => actions.saveOffer(offer)}
+                    onBook={() => setBooking(offer)}
+                    onToggleCompare={() => toggleCompare(offer)}
+                  />
+                ))}
+                {visible.length === 0 && <p className="muted empty">{response.offers.length ? "No results match those filters." : "No results for this search."}</p>}
+              </div>
+            </>
+          )}
         </>
       ) : (
         <div className="card empty muted">

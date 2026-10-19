@@ -21,7 +21,7 @@ const makeApp = (today = () => "2027-01-10") => {
 };
 
 /** An app whose live providers are on, answered by canned SerpApi responses. */
-function makeLiveApp() {
+function makeLiveApp(today = () => "2027-01-10") {
   const calls: URL[] = [];
   const fetchImpl = (async (input: string | URL | Request) => {
     const url = new URL(String(input));
@@ -31,7 +31,7 @@ function makeLiveApp() {
   }) as typeof fetch;
   const edit = fakeEdit();
   const registry = createRegistry({ ...noKeys, SERPAPI_API_KEY: "test-key" }, { fetch: fetchImpl, edit });
-  return { app: createApp({ store: new TripStore(null), registry, maps: createMaps({ offline: true }), edit, today: () => "2027-01-10" }), calls };
+  return { app: createApp({ store: new TripStore(null), registry, maps: createMaps({ offline: true }), edit, today }), calls };
 }
 
 const tripInput = { name: "Tokyo spring", origin: "New York", destination: "Tokyo", startDate: "2027-04-01", endDate: "2027-04-08", travelers: 2, budget: 6000, currency: "USD" };
@@ -46,40 +46,15 @@ const searches = {
 
 describe("search", () => {
   for (const category of CATEGORIES) {
-    it(`returns ${category} offers in the shared shape`, async () => {
+    it(`shows no made-up ${category} results without a live source, only links to real sites`, async () => {
       const res = await request(makeApp()).post(`/api/search/${category}`).send(searches[category]).expect(200);
       const body = res.body as SearchResponse;
-      expect(body.live).toBe(false);
-      expect(body.offers.length).toBeGreaterThan(3);
-      for (const offer of body.offers) {
-        expect(offer.category).toBe(category);
-        expect(offer.totalPrice.amount).toBeGreaterThan(0);
-        expect(offer.bookingUrl).toMatch(/^https:\/\//);
-      }
-      expect(new Set(body.offers.map((o) => o.id)).size).toBe(body.offers.length);
+      expect(body).toMatchObject({ live: false, provider: "Not connected", offers: [] });
+      expect(body.warnings[0]).toMatch(/No live data source/);
+      expect(body.links.length).toBeGreaterThan(1);
+      for (const link of body.links) expect(link.url).toMatch(/^https:\/\//);
     });
   }
-
-  it("is deterministic for the same query", async () => {
-    const app = makeApp();
-    const a = await request(app).post("/api/search/hotels").send(searches.hotels);
-    const b = await request(app).post("/api/search/hotels").send(searches.hotels);
-    expect(a.body.offers).toEqual(b.body.offers);
-  });
-
-  it("prices hotels for the whole stay", async () => {
-    const res = await request(makeApp()).post("/api/search/hotels").send(searches.hotels);
-    for (const o of res.body.offers as Offer[]) expect(o.totalPrice.amount).toBe(o.price.amount * 7);
-  });
-
-  it("builds round-trip flights with two legs", async () => {
-    const res = await request(makeApp()).post("/api/search/flights").send(searches.flights);
-    const offer = (res.body.offers as Offer[])[0];
-    expect(offer.legs).toHaveLength(2);
-    expect(offer.legs![0].depart.slice(0, 10)).toBe("2027-04-01");
-    expect(offer.legs![1].depart.slice(0, 10)).toBe("2027-04-08");
-    expect((res.body.offers as Offer[]).some((o) => o.tags.includes("Cheapest"))).toBe(true);
-  });
 
   it("rejects bad input", async () => {
     const app = makeApp();
@@ -88,23 +63,28 @@ describe("search", () => {
     await request(app).post("/api/search/boats").send({}).expect(404);
   });
 
-  it("reports every category as using sample data without keys", async () => {
+  it("reports every category as not connected without keys", async () => {
     const res = await request(makeApp()).get("/api/providers").expect(200);
     expect(res.body).toHaveLength(CATEGORIES.length);
-    expect(res.body.every((p: { live: boolean }) => !p.live)).toBe(true);
+    expect(res.body.every((p: { live: boolean; provider: string }) => !p.live && p.provider === "Not connected")).toBe(true);
+  });
+
+  it("reports flights and stays as live with a SerpApi key", async () => {
+    const res = await request(makeLiveApp().app).get("/api/providers").expect(200);
+    expect(res.body.filter((p: { live: boolean }) => p.live).map((p: { category: string }) => p.category)).toEqual(["flights", "hotels"]);
   });
 });
 
 describe("trips", () => {
   it("creates, updates and deletes a trip with items", async () => {
-    const app = makeApp();
+    const { app } = makeLiveApp();
     const created = (await request(app).post("/api/trips").send(tripInput).expect(201)).body as Trip;
     expect(created.checklist.length).toBeGreaterThan(0);
 
-    const search = await request(app).post("/api/search/activities").send(searches.activities);
+    const search = await request(app).post("/api/search/hotels").send(searches.hotels);
     const offer = search.body.offers[0] as Offer;
     const item = (await request(app).post(`/api/trips/${created.id}/items`).send(offerToItem(offer, created.travelers)).expect(201)).body;
-    expect(item.cost.amount).toBe(offer.totalPrice.amount * 2); // per-person price × 2 travelers
+    expect(item.cost.amount).toBe(offer.totalPrice.amount);
     expect(item.offerId).toBe(offer.id);
 
     await request(app).patch(`/api/trips/${created.id}/items/${item.id}`).send({ status: "booked", confirmation: "XYZ" }).expect(200);
@@ -132,12 +112,23 @@ describe("trips", () => {
 });
 
 describe("itinerary data", () => {
-  it("keeps the return flight's departure as a timeline moment", async () => {
-    const app = makeApp();
-    const trip = (await request(app).post("/api/trips").send(tripInput)).body as Trip;
-    const offer = (await request(app).post("/api/search/flights").send(searches.flights)).body.offers[0] as Offer;
-    const item = (await request(app).post(`/api/trips/${trip.id}/items`).send(offerToItem(offer, 2)).expect(201)).body;
-    expect(item.moments).toEqual([{ label: "Return flight NRT → JFK", at: offer.legs![1].depart }]);
+  it("keeps the return flight's departure as a timeline moment", () => {
+    const leg = (from: string, to: string, depart: string) => ({ from, to, depart, arrive: depart, durationMinutes: 780, stops: 0, stopCities: [], carrier: "ANA", flightNumber: "NH 9" });
+    const offer: Offer = {
+      id: "f1",
+      category: "flights",
+      provider: "Google Flights",
+      title: "ANA · Nonstop",
+      subtitle: "JFK → NRT → JFK",
+      price: { amount: 900, currency: "USD" },
+      priceUnit: "round trip / person",
+      totalPrice: { amount: 1800, currency: "USD" },
+      tags: [],
+      details: {},
+      bookingUrl: "https://www.google.com/travel/flights",
+      legs: [leg("JFK", "NRT", "2027-04-01T11:00"), leg("NRT", "JFK", "2027-04-08T17:00")],
+    };
+    expect(offerToItem(offer, 2).moments).toEqual([{ label: "Return flight NRT → JFK", at: "2027-04-08T17:00" }]);
   });
 });
 
@@ -170,7 +161,7 @@ describe("maps", () => {
 describe("price watch", () => {
   it("records one price per day and survives repeated checks", async () => {
     let day = "2027-01-10";
-    const app = makeApp(() => day);
+    const { app } = makeLiveApp(() => day);
     const offer = (await request(app).post("/api/search/flights").send(searches.flights)).body.offers[0] as Offer;
     const watch = (await request(app).post("/api/watches").send({ category: "flights", params: searches.flights, offerId: offer.id }).expect(201)).body as Watch;
     expect(watch.history).toEqual([{ date: day, amount: offer.totalPrice.amount, available: true }]);
@@ -182,22 +173,20 @@ describe("price watch", () => {
     for (day of ["2027-01-11", "2027-01-12", "2027-01-12"]) await request(app).post("/api/watches/refresh").expect(200);
     const [updated] = (await request(app).get("/api/watches")).body as Watch[];
     expect(updated.history.map((h) => h.date)).toEqual(["2027-01-10", "2027-01-11", "2027-01-12"]);
-    expect(updated.history.every((h) => h.available && h.amount > 0)).toBe(true);
-    // Mock fares move from day to day.
-    expect(new Set(updated.history.map((h) => h.amount)).size).toBeGreaterThan(1);
+    expect(updated.history.every((h) => h.available && h.amount === offer.totalPrice.amount)).toBe(true);
 
     await request(app).delete(`/api/watches/${watch.id}`).expect(204);
     expect((await request(app).get("/api/watches")).body).toEqual([]);
   });
 
   it("refuses to watch something that isn't in the results", async () => {
-    await request(makeApp()).post("/api/watches").send({ category: "hotels", params: searches.hotels, offerId: "nope" }).expect(404);
+    await request(makeLiveApp().app).post("/api/watches").send({ category: "hotels", params: searches.hotels, offerId: "nope" }).expect(404);
   });
 });
 
 describe("scenarios", () => {
   it("saves scenarios and prunes removed items", async () => {
-    const app = makeApp();
+    const { app } = makeLiveApp();
     const trip = (await request(app).post("/api/trips").send(tripInput)).body as Trip;
     const offer = (await request(app).post("/api/search/flights").send(searches.flights)).body.offers[0] as Offer;
     const item = (await request(app).post(`/api/trips/${trip.id}/items`).send(offerToItem(offer, 2))).body;

@@ -2,7 +2,7 @@
 
 One place to plan and book a trip. You search flights, stays, activities, rental cars and restaurants side by side, save the options you like to a trip board, compare them, then book and track everything on a day-by-day itinerary and budget.
 
-> **Prototype status:** every search category runs on a built-in **mock provider** for now, so the app works fully without API keys. Prices and availability are made up but realistic, and they stay the same for the same search. **Book** opens the real site (Google Flights, Booking.com, GetYourGuide, Kayak, Google Maps) pre-filled with your search. After you book there, you record the confirmation number back in the app.
+> **Real data only:** the app never shows made-up results. Flights and stays show live results once `SERPAPI_API_KEY` is set. Activities, cars and dining have no live source yet, so their tabs show no results, only buttons that run the same search on real sites (Kayak, Expedia, GetYourGuide, Viator, Google Maps, OpenTable…). After you book anywhere, record it on the trip board with **Add your own**. The **Setup** page in the app lists what's left to connect; the same list is under [Next steps](#next-steps) below.
 
 ## Quick start
 
@@ -71,10 +71,11 @@ Data you have on your Mac (`data/trips.json`) doesn't move online automatically.
 ## What's in the app
 
 - **Trips:** destination, dates, travelers and budget. Every search form is pre-filled from these.
-- **Search & save:** tabs for Flights, Stays, Activities, Cars and Dining. You can sort results, filter them by tag and max price, and open details for each one. You can also tick up to 4 results and **compare** them in a side-by-side table.
+- **Search & save:** tabs for Flights, Stays, Activities, Cars and Dining. Categories with a live source show results you can sort, filter by tag and max price, and open for details; you can also tick up to 4 results and **compare** them side by side. Categories without one link out to the same search on real sites.
 - **Workshop:** build *scenarios*, i.e. different combinations of saved flights, cars, stays and activities plus drives, and compare their total cost, cost per person, time in the air, time on the road and estimated fuel side by side. **Suggest transfers** walks each scenario in time order (land, pick up the car, check in, activities, return flight) and adds the missing drives using real road routing. The map shows the flight arcs and the actual driving routes, with "On the ground" and "Whole trip" views.
-- **Price watch:** press **Watch price** on any flight, stay or car. The server re-checks each watched option once a day (and on demand), keeps a daily price history, and the dashboard shows the current price, change since the last check, change since you started watching, the low and high, and a chart with a table view.
-- **More booking sites:** every flight, stay and car links to the same search on other sites (Kayak, Skyscanner, Expedia, Hotels.com, Google Hotels, Airbnb, Rentalcars) for comparison shopping.
+- **Price watch:** press **Watch price** on any live flight or stay. The server re-checks each watched option once a day (and on demand), keeps a daily price history, and the dashboard shows the current price, change since the last check, change since you started watching, the low and high, and a chart with a table view.
+- **More booking sites:** every flight and stay links to the same search on other sites (Kayak, Skyscanner, Expedia, Hotels.com, Google Hotels, Airbnb) for comparison shopping.
+- **Setup:** a table of the steps left to connect real data, with the free API for each and whether it's done.
 - **Trip board:** a panel that stays next to the search results and holds everything you've saved, grouped as *Idea → Shortlisted → Booked*. **Add your own** records things booked elsewhere (trains, tickets, reservations).
 - **Book flow:** **Book** opens the provider in a new tab. A dialog then asks for the confirmation number and the final price, and marks the item as booked.
 - **Itinerary:** one card per day showing check-ins and check-outs, flights (including the return leg), activities and dinners, plus which hotel you sleep at each night. Items with no date sit in an Unscheduled list until you assign them a day.
@@ -95,15 +96,15 @@ server/
   vercel.ts                Vercel entry point (bundled to build/server.mjs; served by api/index.js)
   edit.ts                  Chase Edit hotel list (fetched from edithotelsearch.com, cached weekly)
   maps.ts                  Geocoding (OpenStreetMap Nominatim) + driving routes (OSRM, or Google with a key)
+  places.ts                36 common destinations: airport code + coordinates, city centre (autocomplete, offline geocoding)
   watch.ts                 Daily price-watch job
   config.ts                Env vars / API keys
   providers/
-    index.ts               Provider registry: uses a live provider when its keys are set, otherwise the mock
+    index.ts               Provider registry: uses a live provider when its keys are set, otherwise returns no results
     serpapi.ts             Live Google Flights / Google Hotels via SerpApi
     links.ts               Deep links into real booking sites (+ the same search on other sites)
-    mock/                  Mock flights, stays, activities, cars, dining + 36-city place data
 src/                       React app (Vite)
-  components/              Home, Workspace, SearchPanel, TripBoard, Itinerary, Budget, Checklist, …
+  components/              Home, Workspace, SearchPanel, TripBoard, Itinerary, Budget, Checklist, Setup, …
 tests/                     API tests
 ```
 
@@ -125,7 +126,23 @@ Not used:
 - **Scraping Hotels.com directly:** against its terms and blocked by bot protection. Google Hotels already reports the Hotels.com price for most properties.
 - **Bookable rates:** if you later want booking inside the app, the candidates are [LiteAPI](https://liteapi.travel) for hotels (free sandbox) and [Duffel](https://duffel.com) for flights.
 
-To add another provider, implement `SearchProvider` (see `server/providers/index.ts`), map its response into the shared `Offer` shape, and add it to `liveProviders`. A provider is used once all of its `requiredKeys` are set; otherwise its category falls back to mock data.
+To add another provider, implement `SearchProvider` (see `server/providers/index.ts`), map its response into the shared `Offer` shape, and add it to `liveProviders`. A provider is used once all of its `requiredKeys` are set; otherwise its category shows no results, only links to real sites.
+
+## Next steps
+
+Everything below is free. The app's **Setup** page shows the same table.
+
+| # | Step | What it unlocks | API / service | Cost | How | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Get a SerpApi key | Real flight and hotel results, prices and price watch | [SerpApi](https://serpapi.com/users/sign_up) (Google Flights + Google Hotels) | Free plan: 250 searches a month | Sign up, copy the key, set `SERPAPI_API_KEY` in `.env` (or Vercel's environment variables), restart | To do |
+| 2 | Check flights and stays against the live service | Confidence the results are mapped correctly | SerpApi | A few searches from the free plan | Run one flight and one hotel search for a real trip and compare with Google Flights and Google Hotels | To do |
+| 3 | Plan your search budget | Not running out of free searches mid-month | SerpApi | Free | Each search uses 1 of the 250. Each watched price uses about 30 a month (one check a day), so keep it to a handful of watches | To do |
+| 4 | Put the site online | trips.jascui.com with login, storage and the daily price check | [Vercel](https://vercel.com/signup) Hobby + Upstash Redis | Free plans | See [Put it online](#put-it-online-at-tripsjascuicom-free) above | To do |
+| 5 | Connect activities | Real tours and attractions with prices | [Viator Partner API](https://partnerresources.viator.com/travel-commerce/affiliate/) (Basic Access) | Free: join the affiliate program; Basic Access needs no approval | Get the API key, then build `server/providers/viator.ts` and register it for `activities` | To do |
+| 6 | Connect restaurants | Real restaurants near your stay, filterable by cuisine (no prices or ratings) | [OpenStreetMap Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) | Free, no key | Build `server/providers/overpass.ts` that queries `amenity=restaurant` around the destination and register it for `dining` | To do |
+| 7 | Car rentals | Real rental prices | None found that is free | Rental price APIs are paid or partner-only | Keep using the Kayak, Expedia and Rentalcars links on the Cars tab, then record the booking with **Add your own** | No free option |
+| 8 | Maps and driving times | Road routes, drive times, place search | OSRM + Nominatim + OpenStreetMap tiles | Free, no key | Already connected | Done |
+| 9 | Chase Edit hotel list | Edit hotels at your destination | edithotelsearch.com | Free, no key | Already connected | Done |
 
 ## Chase "The Edit" hotels
 
@@ -146,7 +163,6 @@ To use Google Maps for routing instead, set `GOOGLE_MAPS_API_KEY` (Routes API). 
 ## Known prototype limits
 
 - Single user. Login is one shared password, not separate accounts.
-- Mock flight times ignore time zones.
 - Price watch only runs while the server is running. It catches up on its next start, but missed days aren't backfilled.
 - Drive legs are priced as fuel only. Tolls, parking and taxis/trains aren't modelled yet.
 - All prices are in USD.
