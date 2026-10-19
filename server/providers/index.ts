@@ -3,7 +3,8 @@ import type { EditCatalog } from "../edit.ts";
 import type { KeyName } from "../config.ts";
 import { CATEGORIES } from "../../shared/types.ts";
 import { searchLinks } from "./links.ts";
-import { serpapiFlights, serpapiHotels } from "./serpapi.ts";
+import { hotelsComHotels } from "./hotelscom.ts";
+import { serpapiFlights } from "./serpapi.ts";
 
 /**
  * A search provider for one category. To connect a real API, write a module
@@ -43,7 +44,7 @@ export const NOT_CONNECTED = "Not connected";
 // its requiredKeys are set; otherwise the category has no data source.
 const liveProviders: LiveProviderMap = {
   flights: [serpapiFlights],
-  hotels: [serpapiHotels],
+  hotels: [hotelsComHotels],
   activities: [],
   cars: [],
   dining: [],
@@ -52,7 +53,7 @@ const liveProviders: LiveProviderMap = {
 /** Env vars that would unlock a live provider, surfaced in the UI as hints. */
 const CANDIDATE_KEYS: Record<Category, KeyName[]> = {
   flights: ["SERPAPI_API_KEY"],
-  hotels: ["SERPAPI_API_KEY"],
+  hotels: ["RAPIDAPI_KEY"],
   activities: [],
   cars: [],
   dining: [],

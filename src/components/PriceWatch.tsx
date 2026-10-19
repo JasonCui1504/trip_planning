@@ -231,8 +231,8 @@ export function PriceWatch() {
         ))}
       </div>
       <p className="muted small">
-        Prices are re-checked automatically once a day while the app's server is running. Only results from a live source (flights and stays, once
-        SerpApi is connected) can be watched.
+        Prices are re-checked automatically once a day while the app's server is running. Only results from a live source (flights once SerpApi is
+        connected, stays once Hotels.com is) can be watched.
       </p>
     </div>
   );

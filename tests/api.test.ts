@@ -1,6 +1,6 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { CATEGORIES, offerToItem, type Offer, type SearchResponse, type Trip } from "../shared/types.ts";
+import { CATEGORIES, offerToItem, type Offer, type SearchResponse, type Trip, type TripItem } from "../shared/types.ts";
 import { createApp } from "../server/app.ts";
 import { config } from "../server/config.ts";
 import { TripStore } from "../server/db.ts";
@@ -9,7 +9,9 @@ import { createEditCatalog, parseEditPage, sameHotel } from "../server/edit.ts";
 import { RedisStore } from "../server/redis.ts";
 import { createMaps, decodePolyline } from "../server/maps.ts";
 import { editPage } from "./fixtures/edit.ts";
-import { googleFlights, googleHotels } from "./fixtures/serpapi.ts";
+import { googleFlights } from "./fixtures/serpapi.ts";
+import { hotelsComHotelRegions, hotelsComRegions, hotelsComSearch } from "./fixtures/hotelscom.ts";
+import { buildPlan } from "../server/travelBudget.ts";
 import { createRegistry } from "../server/providers/index.ts";
 import type { Scenario, Watch } from "../shared/types.ts";
 
@@ -20,17 +22,19 @@ const makeApp = (today = () => "2027-01-10") => {
   return createApp({ store: new TripStore(null), registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, today });
 };
 
-/** An app whose live providers are on, answered by canned SerpApi responses. */
+/** An app whose live providers are on, answered by canned SerpApi and Hotels.com responses. */
 function makeLiveApp(today = () => "2027-01-10") {
-  const calls: URL[] = [];
-  const fetchImpl = (async (input: string | URL | Request) => {
+  const calls: { url: URL; headers: Headers }[] = [];
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
-    calls.push(url);
-    const engine = url.searchParams.get("engine");
-    return new Response(JSON.stringify(engine === "google_flights" ? googleFlights : googleHotels));
+    calls.push({ url, headers: new Headers(init?.headers) });
+    if (url.host === "serpapi.com") return new Response(JSON.stringify(googleFlights));
+    if (url.pathname === "/v2/regions") return new Response(JSON.stringify(url.searchParams.get("query")!.includes("Andaz") ? hotelsComHotelRegions : hotelsComRegions));
+    if (url.pathname === "/v2/hotels/search") return new Response(JSON.stringify(hotelsComSearch));
+    return new Response("{}", { status: 404 });
   }) as typeof fetch;
   const edit = fakeEdit();
-  const registry = createRegistry({ ...noKeys, SERPAPI_API_KEY: "test-key" }, { fetch: fetchImpl, edit });
+  const registry = createRegistry({ ...noKeys, SERPAPI_API_KEY: "test-key", RAPIDAPI_KEY: "rapid-key" }, { fetch: fetchImpl, edit });
   return { app: createApp({ store: new TripStore(null), registry, maps: createMaps({ offline: true }), edit, today }), calls };
 }
 
@@ -210,15 +214,15 @@ describe("scenarios", () => {
   });
 });
 
-describe("live providers (SerpApi)", () => {
+describe("live providers (SerpApi flights, Hotels.com stays)", () => {
   it("maps Google Flights results and price insights", async () => {
     const { app, calls } = makeLiveApp();
     const res = await request(app).post("/api/search/flights").send({ ...searches.flights, origin: "San Francisco", destination: "NRT" }).expect(200);
     const body = res.body as SearchResponse;
     expect(body.live).toBe(true);
     expect(body.provider).toBe("Google Flights (SerpApi)");
-    expect(calls[0].searchParams.get("departure_id")).toBe("SFO");
-    expect(calls[0].searchParams.get("type")).toBe("1");
+    expect(calls[0].url.searchParams.get("departure_id")).toBe("SFO");
+    expect(calls[0].url.searchParams.get("type")).toBe("1");
     expect(body.offers).toHaveLength(2);
     const [nonstop, oneStop] = body.offers;
     expect(nonstop).toMatchObject({ title: "United · Nonstop", totalPrice: { amount: 1840 }, price: { amount: 920 }, durationMinutes: 690 });
@@ -234,27 +238,191 @@ describe("live providers (SerpApi)", () => {
     expect(res.body.error).toMatch(/airport code/);
   });
 
-  it("maps Google Hotels with per-site prices and Chase Edit badges", async () => {
-    const { app } = makeLiveApp();
+  it("maps Hotels.com results with Chase Edit badges", async () => {
+    const { app, calls } = makeLiveApp();
     const res = await request(app).post("/api/search/hotels").send(searches.hotels).expect(200);
-    const [andaz, gracery, ...rest] = (res.body as SearchResponse).offers;
+    const body = res.body as SearchResponse;
+    expect(body).toMatchObject({ live: true, provider: "Hotels.com" });
+    expect(calls.every((c) => c.url.host === "hotels-com-provider.p.rapidapi.com")).toBe(true);
+    // The region lookup may already be cached from an earlier search.
+    const search = calls.find((c) => c.url.pathname === "/v2/hotels/search")!;
+    expect(search.headers.get("x-rapidapi-key")).toBe("rapid-key");
+    expect(search.url.searchParams.get("region_id")).toBe("179900");
+    expect(search.url.searchParams.get("checkin_date")).toBe("2027-04-01");
+
+    const [gracery, andaz, ...rest] = body.offers;
     expect(rest).toHaveLength(0); // the property without a rate is dropped
-    expect(andaz).toMatchObject({ title: "Andaz Tokyo Toranomon Hills", price: { amount: 610 }, totalPrice: { amount: 4270 }, rating: 4.7, start: "2027-04-01T15:00", end: "2027-04-08T12:00" });
-    expect(andaz.priceSources!.map((p) => [p.source, p.amount])).toEqual([["Hotels.com", 4186], ["Expedia.com", 4235], ["Hyatt", 4270]]);
-    expect(andaz.edit).toMatchObject({ brand: "Hyatt", selectCredit: false });
-    expect(andaz.tags[0]).toBe("Chase Edit");
-    expect(andaz.points![0]).toMatchObject({ lat: 35.6672, lon: 139.7497 });
-    expect(gracery.totalPrice.amount).toBe(140 * 7);
+    expect(gracery).toMatchObject({ title: "Hotel Gracery Shinjuku", price: { amount: 140 }, totalPrice: { amount: 1002 }, rating: 4.3, location: "Shinjuku, Tokyo" });
+    expect(gracery.bookingUrl).toBe("https://www.hotels.com/h1167834.Hotel-Information?chkin=2027-04-01&chkout=2027-04-08&rm1=a2");
     expect(gracery.edit).toBeUndefined();
+    expect(andaz.totalPrice.amount).toBe(610 * 7);
+    expect(andaz.edit).toMatchObject({ brand: "Hyatt", selectCredit: false });
+    expect(andaz.tags.slice(0, 2)).toEqual(["Chase Edit", "Free cancellation"]);
+    expect(andaz.points![0]).toMatchObject({ lat: 35.6672, lon: 139.7497 });
+  });
+
+  it("puts a hotel searched for by name first", async () => {
+    const { app } = makeLiveApp();
+    const res = await request(app).post("/api/search/hotels").send({ ...searches.hotels, location: "Andaz Tokyo, Tokyo" }).expect(200);
+    expect((res.body as SearchResponse).offers[0]).toMatchObject({ title: "Andaz Tokyo Toranomon Hills" });
+    expect((res.body as SearchResponse).offers[0].tags).toContain("Matches your search");
   });
 
   it("price-watches live results across days", async () => {
     const { app } = makeLiveApp();
     const offer = (await request(app).post("/api/search/hotels").send(searches.hotels)).body.offers[0] as Offer;
     const watch = (await request(app).post("/api/watches").send({ category: "hotels", params: searches.hotels, offerId: offer.id }).expect(201)).body as Watch;
-    expect(watch.provider).toBe("Google Hotels (SerpApi)");
+    expect(watch.provider).toBe("Hotels.com");
     const [refreshed] = (await request(app).post("/api/watches/refresh").expect(200)).body as Watch[];
-    expect(refreshed.history.at(-1)).toMatchObject({ amount: 4270, available: true });
+    expect(refreshed.history.at(-1)).toMatchObject({ amount: 1002, available: true });
+  });
+});
+
+describe("export to the travel budget", () => {
+  const item = (fields: Partial<TripItem>): TripItem => ({
+    id: Math.random().toString(36).slice(2),
+    category: "custom",
+    status: "shortlisted",
+    title: "Item",
+    subtitle: "",
+    cost: { amount: 0, currency: "USD" },
+    provider: "Manual entry",
+    details: {},
+    addedAt: "2027-01-01T00:00:00Z",
+    ...fields,
+  });
+  const trip: Trip = {
+    id: "t1",
+    name: "Tokyo spring",
+    origin: "New York",
+    destination: "Tokyo",
+    startDate: "2027-04-01",
+    endDate: "2027-04-04",
+    travelers: 2,
+    budget: 6000,
+    currency: "USD",
+    notes: "",
+    checklist: [],
+    scenarios: [],
+    createdAt: "",
+    updatedAt: "",
+    items: [
+      item({ category: "flights", status: "booked", title: "ANA · Nonstop", start: "2027-04-01T11:05", end: "2027-04-02T14:35", cost: { amount: 1800, currency: "USD" }, confirmation: "ABC123", moments: [{ label: "Return flight NRT → JFK", at: "2027-04-05T17:20" }] }),
+      item({ category: "hotels", status: "booked", title: "Andaz Tokyo", start: "2027-04-02T15:00", end: "2027-04-04T11:00", location: "Toranomon, Tokyo", bookingUrl: "https://www.hotels.com/h13304906.Hotel-Information" }),
+      item({ category: "hotels", status: "shortlisted", title: "Backup hotel", start: "2027-04-02T15:00", end: "2027-04-05T11:00" }),
+      item({ category: "cars", status: "shortlisted", title: "Toyota Yaris", start: "2027-04-03T09:00", end: "2027-04-04T09:00", cost: { amount: 120, currency: "USD" } }),
+      item({ category: "activities", title: "teamLab Planets", start: "2027-04-03T10:10", cost: { amount: 70, currency: "USD" }, durationMinutes: 120 }),
+      item({ category: "dining", status: "idea", title: "Sushi Saito", cost: { amount: 400, currency: "USD" } }),
+      item({ title: "JR Pass" }),
+    ],
+  };
+
+  it("maps a trip onto events, days and ideas", () => {
+    const plan = buildPlan(trip);
+    // Widened to cover the return flight on the 5th.
+    expect(plan.trip).toEqual({ name: "Tokyo spring", start_date: "2027-04-01", end_date: "2027-04-05" });
+    expect(plan.events.map((e) => [e.date, e.start_hour, e.end_hour, e.status, e.title])).toEqual([
+      ["2027-04-01", 11, 24, "transit", "ANA · Nonstop"], // overnight: runs to midnight
+      ["2027-04-03", 10, 12, "not_booked", "teamLab Planets"],
+      ["2027-04-05", 17, 18, "transit", "Return flight NRT → JFK · ANA · Nonstop"],
+    ]);
+    expect(plan.events[0].notes).toContain("Confirmation: ABC123");
+    // The booked stay wins its nights; the backup only fills the night it alone covers.
+    expect(plan.days.map((d) => [d.date, d.accommodation ?? "", d.accommodation_status ?? "", d.car ?? ""])).toEqual([
+      ["2027-04-02", "Andaz Tokyo", "CONFIRMED", ""],
+      ["2027-04-03", "Andaz Tokyo", "CONFIRMED", "Toyota Yaris"],
+      ["2027-04-04", "Backup hotel", "", "Toyota Yaris"],
+    ]);
+    expect(plan.days[0].stay_address).toBe("Toranomon, Tokyo");
+    expect(plan.ideas).toEqual(["Sushi Saito — $400", "JR Pass"]);
+    expect(plan.doc).toContain("- [x] ANA · Nonstop — $1,800 — conf ABC123");
+  });
+
+  /** A stand-in for jascui.com's /api/travel routes, with the same login and validation rules. */
+  function fakeTravelBudget() {
+    const db = { trips: new Map<number, Record<string, unknown>>(), events: new Map<number, Record<string, unknown>>(), ideas: new Map<number, Record<string, unknown>>(), days: new Map<string, Record<string, unknown>>() };
+    let nextId = 1;
+    const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (url.pathname === "/api/travel/auth") {
+        return body.username === "jason" && body.password === "pw" ? json({ ok: true }, 200, { "Set-Cookie": "travel_session=jason:1:abc; HttpOnly; Path=/" }) : json({ error: "Invalid username or password" }, 401);
+      }
+      if (new Headers(init?.headers).get("Cookie") !== "travel_session=jason:1:abc") return json({ error: "Unauthorized" }, 401);
+      const [, , , table, id] = url.pathname.split("/");
+      if (url.pathname.startsWith("/travel_budget/trips/")) return new Response("", { status: db.trips.has(Number(url.pathname.split("/")[3])) ? 200 : 404 });
+      if (table === "days") {
+        if (!db.trips.has(body.trip_id)) return json({ error: "That person or trip doesn't exist" }, 400);
+        const key = `${body.trip_id}:${body.date}`;
+        db.days.set(key, { ...db.days.get(key), ...body });
+        return json({ ok: true });
+      }
+      const rows = table === "trips" ? db.trips : table === "events" ? db.events : db.ideas;
+      if (method === "POST") {
+        if (table !== "trips" && !db.trips.has(body.trip_id)) return json({ error: "That person or trip doesn't exist" }, 400);
+        const newId = nextId++;
+        rows.set(newId, body);
+        return json({ id: newId }, 201);
+      }
+      if (method === "PUT") rows.set(Number(id), { ...rows.get(Number(id)), ...body });
+      if (method === "DELETE") rows.delete(Number(id));
+      return json({ ok: true });
+    }) as typeof fetch;
+    return { db, fetchImpl };
+  }
+
+  const makeExportApp = (fetchImpl: typeof fetch, login: { username?: string; password?: string } = {}) => {
+    const edit = fakeEdit();
+    return createApp({ store: new TripStore(null), registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, travelBudget: { url: "https://www.jascui.test", fetch: fetchImpl, ...login } });
+  };
+
+  it("creates the trip, then replaces only what it wrote on re-export", async () => {
+    const { db, fetchImpl } = fakeTravelBudget();
+    const app = makeExportApp(fetchImpl);
+    expect((await request(app).get("/api/travel-budget").expect(200)).body).toEqual({ url: "https://www.jascui.test", savedLogin: false });
+    const created = (await request(app).post("/api/trips").send({ ...tripInput, startDate: "2027-04-01", endDate: "2027-04-04" })).body as Trip;
+    const hotel = (await request(app).post(`/api/trips/${created.id}/items`).send({ category: "hotels", title: "Andaz Tokyo", status: "booked", start: "2027-04-02T15:00", end: "2027-04-04T11:00" })).body as TripItem;
+    await request(app).post(`/api/trips/${created.id}/items`).send({ category: "activities", title: "teamLab", start: "2027-04-03T10:00" });
+    await request(app).post(`/api/trips/${created.id}/items`).send({ category: "custom", title: "JR Pass", status: "idea" });
+
+    const first = (await request(app).post(`/api/trips/${created.id}/export/travel-budget`).send({ username: "jason", password: "pw" }).expect(200)).body as Trip;
+    expect(first.travelBudget).toMatchObject({ url: `https://www.jascui.test/travel_budget/trips/${first.travelBudget!.tripId}`, days: ["2027-04-02", "2027-04-03"] });
+    expect(db.trips.get(first.travelBudget!.tripId)).toMatchObject({ name: "Tokyo spring", start_date: "2027-04-01", doc: expect.stringContaining("## From Trip Workshop") });
+    expect([...db.events.values()]).toEqual([expect.objectContaining({ title: "teamLab", date: "2027-04-03", start_hour: 10, end_hour: 13, status: "not_booked" })]);
+    expect([...db.ideas.values()]).toEqual([expect.objectContaining({ text: "JR Pass" })]);
+    expect(db.days.get(`${first.travelBudget!.tripId}:2027-04-03`)).toMatchObject({ accommodation: "Andaz Tokyo", accommodation_status: "CONFIRMED" });
+
+    // Something added by hand on the travel budget survives a re-export.
+    db.events.set(999, { trip_id: first.travelBudget!.tripId, title: "Dinner with Ken" });
+    await request(app).patch(`/api/trips/${created.id}/items/${hotel.id}`).send({ end: "2027-04-03T11:00" });
+    const second = (await request(app).post(`/api/trips/${created.id}/export/travel-budget`).send({ username: "jason", password: "pw" }).expect(200)).body as Trip;
+    expect(second.travelBudget!.tripId).toBe(first.travelBudget!.tripId);
+    expect(db.trips.size).toBe(1);
+    expect([...db.events.values()].map((e) => e.title).sort()).toEqual(["Dinner with Ken", "teamLab"]);
+    expect(db.ideas.size).toBe(1);
+    expect(db.days.get(`${first.travelBudget!.tripId}:2027-04-03`)).toMatchObject({ accommodation: "", accommodation_status: "" });
+
+    // Deleted on the site since: the next export makes a new trip.
+    db.trips.clear();
+    const third = (await request(app).post(`/api/trips/${created.id}/export/travel-budget`).send({ username: "jason", password: "pw" }).expect(200)).body as Trip;
+    expect(third.travelBudget!.tripId).not.toBe(first.travelBudget!.tripId);
+    expect(db.trips.size).toBe(1);
+  });
+
+  it("uses a login saved on the server and reports a bad one", async () => {
+    const { fetchImpl } = fakeTravelBudget();
+    const saved = makeExportApp(fetchImpl, { username: "jason", password: "pw" });
+    expect((await request(saved).get("/api/travel-budget")).body.savedLogin).toBe(true);
+    const t = (await request(saved).post("/api/trips").send(tripInput)).body as Trip;
+    await request(saved).post(`/api/trips/${t.id}/export/travel-budget`).send({}).expect(200);
+
+    const app = makeExportApp(fetchImpl);
+    const u = (await request(app).post("/api/trips").send(tripInput)).body as Trip;
+    await request(app).post(`/api/trips/${u.id}/export/travel-budget`).send({}).expect(400);
+    const bad = await request(app).post(`/api/trips/${u.id}/export/travel-budget`).send({ username: "jason", password: "nope" }).expect(502);
+    expect(bad.body.error).toMatch(/sign-in failed: Invalid username or password/);
   });
 });
 

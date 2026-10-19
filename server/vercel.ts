@@ -32,6 +32,7 @@ function build() {
     edit,
     auth: createAuth({ password: config.appPassword, secret: config.sessionSecret }),
     cronSecret: config.cronSecret,
+    travelBudget: config.travelBudget,
   });
 }
 

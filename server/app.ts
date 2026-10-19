@@ -21,6 +21,7 @@ import { ProviderInputError } from "./providers/serpapi.ts";
 import type { Registry } from "./providers/index.ts";
 import { checkWatch, localToday, refreshWatches } from "./watch.ts";
 import { searchPlaces } from "./places.ts";
+import { exportTrip, TravelBudgetError, type TravelBudgetOptions } from "./travelBudget.ts";
 import { searchValidators, validateTripInput, ValidationError } from "./validate.ts";
 
 const DEFAULT_CHECKLIST = [
@@ -50,6 +51,8 @@ export interface AppDeps {
   cronSecret?: string;
   /** Injectable clock so tests can simulate several days of price checks. */
   today?: () => string;
+  /** The jascui.com travel budget that trips export to; a saved login is optional. */
+  travelBudget?: TravelBudgetOptions;
 }
 
 const isPoint = (p: unknown): p is GeoPoint =>
@@ -85,7 +88,7 @@ function validateScenarios(value: unknown, trip: Trip): Scenario[] {
   });
 }
 
-export function createApp({ store, registry, maps, edit, auth = createAuth({}), cronSecret, today = localToday }: AppDeps) {
+export function createApp({ store, registry, maps, edit, auth = createAuth({}), cronSecret, today = localToday, travelBudget = { url: "https://www.jascui.com" } }: AppDeps) {
   const app = express();
   // Behind Vercel's proxy: trust X-Forwarded-* for the client IP and https.
   app.set("trust proxy", true);
@@ -262,6 +265,29 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
   app.delete("/api/trips/:id", async (req, res) => {
     if (!(await store.remove(req.params.id))) throw new NotFound(`Trip ${req.params.id} not found`);
     res.status(204).end();
+  });
+
+  // ----- Export to the jascui.com travel budget -----
+
+  app.get("/api/travel-budget", (_req, res) => {
+    res.json({ url: travelBudget.url, savedLogin: Boolean(travelBudget.username && travelBudget.password) });
+  });
+
+  app.post("/api/trips/:id/export/travel-budget", async (req, res) => {
+    const trip = await loadTrip(req.params.id);
+    const body = req.body ?? {};
+    // A login typed in the export dialog is used for this export only and never stored.
+    const username = typeof body.username === "string" && body.username.trim() ? body.username.trim() : travelBudget.username;
+    const password = typeof body.password === "string" && body.password ? body.password : travelBudget.password;
+    if (!username || !password) throw new ValidationError("Enter your travel budget username and password");
+    try {
+      const link = await exportTrip(trip, { ...travelBudget, username, password });
+      res.json(await touch({ ...trip, travelBudget: link }));
+    } catch (err) {
+      if (!(err instanceof TravelBudgetError)) throw err;
+      if (err.partial) await touch({ ...trip, travelBudget: err.partial });
+      res.status(502).json({ error: err.message });
+    }
   });
 
   // ----- Trip items (saved offers, bookings, custom entries) -----

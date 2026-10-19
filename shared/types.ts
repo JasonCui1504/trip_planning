@@ -266,8 +266,21 @@ export interface Trip {
   items: TripItem[];
   checklist: ChecklistItem[];
   scenarios: Scenario[];
+  /** Where this trip was last exported on the jascui.com travel budget. */
+  travelBudget?: TravelBudgetLink;
   createdAt: string;
   updatedAt: string;
+}
+
+/** What an export wrote to the travel budget, so the next export can replace it. */
+export interface TravelBudgetLink {
+  tripId: number;
+  url: string;
+  eventIds: number[];
+  ideaIds: number[];
+  /** Days whose stay or car fields the export filled. */
+  days: string[];
+  exportedAt: string;
 }
 
 export type TripInput = Pick<

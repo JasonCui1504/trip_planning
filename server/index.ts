@@ -15,7 +15,7 @@ const edit = createEditCatalog({ cache: store });
 const registry = createRegistry(config.keys, { edit });
 const maps = createMaps({ googleKey: config.googleMapsKey, offline: config.mapsOffline });
 const auth = createAuth({ password: config.appPassword, secret: config.sessionSecret });
-const app = createApp({ store, registry, maps, edit, auth, cronSecret: config.cronSecret });
+const app = createApp({ store, registry, maps, edit, auth, cronSecret: config.cronSecret, travelBudget: config.travelBudget });
 
 // In production, serve the built web app from the same port.
 const dist = resolve("dist");

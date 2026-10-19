@@ -21,31 +21,49 @@ const STATUS_CLASS: Record<StepStatus, string> = { done: "status-booked", todo: 
  * What's left to connect, in order. Every source here is free; categories
  * with no free real-data source say so instead of showing made-up results.
  */
-function steps(serpapiLive: boolean): Step[] {
+function steps({ flightsLive, hotelsLive, savedLogin }: { flightsLive: boolean; hotelsLive: boolean; savedLogin: boolean }): Step[] {
   return [
     {
       step: "Get a SerpApi key",
-      unlocks: "Real flight and hotel results, prices and price watch",
-      source: "SerpApi (Google Flights + Google Hotels)",
+      unlocks: "Real flight results and prices from Google Flights, and flight price watch",
+      source: "SerpApi (Google Flights only)",
       url: "https://serpapi.com/users/sign_up",
       cost: "Free plan: 250 searches a month",
-      howTo: "Sign up, copy the key from your dashboard, set SERPAPI_API_KEY in .env (or in Vercel's environment variables), restart.",
-      status: serpapiLive ? "done" : "todo",
+      howTo: "Sign up, copy the key from your dashboard, set SERPAPI_API_KEY in Vercel's environment variables (or .env), redeploy.",
+      status: flightsLive ? "done" : "todo",
     },
     {
-      step: "Check flights and stays against the live service",
+      step: "Get a RapidAPI key for Hotels.com",
+      unlocks: "Real Hotels.com stays and prices, Chase Edit badges on them, and hotel price watch",
+      source: "Hotels.com Provider API on RapidAPI",
+      url: "https://rapidapi.com/tipsters/api/hotels-com-provider/pricing",
+      cost: "Free Basic plan (check the monthly limit on the pricing tab)",
+      howTo: "Make a RapidAPI account, subscribe to the Basic plan, copy your X-RapidAPI-Key into RAPIDAPI_KEY, redeploy. Each hotel search uses 2 requests (place lookup + search).",
+      status: hotelsLive ? "done" : "todo",
+    },
+    {
+      step: "Check flights and stays against the live services",
       unlocks: "Confidence the results are mapped correctly",
-      source: "SerpApi",
-      cost: "A few searches from the free plan",
-      howTo: "Run one flight and one hotel search for a real trip, and compare the prices with Google Flights and Google Hotels.",
+      source: "SerpApi, Hotels.com Provider",
+      cost: "A few searches from the free plans",
+      howTo: "Run one flight and one hotel search for a real trip, and compare the prices with Google Flights and Hotels.com.",
       status: "todo",
+    },
+    {
+      step: "Save your travel budget login (optional)",
+      unlocks: "Export to jascui.com/travel_budget without typing the password each time",
+      source: "jascui.com travel budget",
+      url: "https://www.jascui.com/travel_budget",
+      cost: "Free",
+      howTo: "Set TRAVEL_BUDGET_USERNAME and TRAVEL_BUDGET_PASSWORD in Vercel's environment variables, or just type them in the Export dialog on a trip.",
+      status: savedLogin ? "done" : "todo",
     },
     {
       step: "Plan your search budget",
       unlocks: "Not running out of free searches mid-month",
-      source: "SerpApi",
+      source: "SerpApi, RapidAPI",
       cost: "Free",
-      howTo: "Each search uses 1 of the 250. Each watched price uses about 30 a month (one check a day), so keep it to a handful of watches.",
+      howTo: "Each watched price is checked once a day, about 30 searches a month (60 RapidAPI requests for a hotel), so keep it to a handful of watches.",
       status: "todo",
     },
     {
@@ -54,8 +72,8 @@ function steps(serpapiLive: boolean): Step[] {
       source: "Vercel Hobby + Upstash Redis",
       url: "https://vercel.com/signup",
       cost: "Free plans",
-      howTo: "Follow \"Put it online\" in the README: import the repo, add Upstash storage, set APP_PASSWORD and CRON_SECRET, add the domain.",
-      status: "todo",
+      howTo: "Already online.",
+      status: "done",
     },
     {
       step: "Connect activities",
@@ -93,7 +111,7 @@ function steps(serpapiLive: boolean): Step[] {
     },
     {
       step: "Chase Edit hotel list",
-      unlocks: "Edit hotels at your destination",
+      unlocks: "Edit hotels at your destination, and Chase Edit badges on Hotels.com results",
       source: "edithotelsearch.com",
       cost: "Free, no key",
       howTo: "Already connected. Nothing to do.",
@@ -104,10 +122,12 @@ function steps(serpapiLive: boolean): Step[] {
 
 export function Setup() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [savedLogin, setSavedLogin] = useState(false);
   useEffect(() => {
     api.providers().then(setProviders).catch(() => setProviders([]));
+    api.travelBudget().then((t) => setSavedLogin(t.savedLogin)).catch(() => setSavedLogin(false));
   }, []);
-  const serpapiLive = providers.some((p) => p.category === "flights" && p.live);
+  const live = (category: ProviderStatus["category"]) => providers.some((p) => p.category === category && p.live);
 
   return (
     <div className="home">
@@ -133,7 +153,7 @@ export function Setup() {
             </tr>
           </thead>
           <tbody>
-            {steps(serpapiLive).map((s, i) => (
+            {steps({ flightsLive: live("flights"), hotelsLive: live("hotels"), savedLogin }).map((s, i) => (
               <tr key={s.step}>
                 <td>{i + 1}</td>
                 <td>{s.step}</td>
