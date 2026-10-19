@@ -11,7 +11,9 @@
     "build": "vite build",
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "mac:install": "bash scripts/mac/install.sh",
+    "mac:uninstall": "bash scripts/mac/uninstall.sh"
   },
   "dependencies": {
     "dotenv": "^18.0.8",

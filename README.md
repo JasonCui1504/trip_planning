@@ -21,6 +21,28 @@ Other scripts:
 
 Trips are saved to `data/trips.json`, which is gitignored. Delete that file to start over.
 
+## Install on your Mac (Dock app)
+
+You do this once. You need [Node.js](https://nodejs.org) 20 or newer (`brew install node` works too).
+
+```bash
+git clone https://github.com/JasonCui1504/trip_planning.git ~/trip_planning
+cd ~/trip_planning
+git checkout claude/sleepy-rubin-8lyycm   # until this branch is merged
+npm run mac:install
+```
+
+The script installs and builds the app. It also registers a background server that starts at login and restarts if it crashes, so Price watch keeps checking prices daily. When it's done, it opens http://localhost:8787. Then add it to the Dock:
+
+- **Safari:** with the app open, **File → Add to Dock…**
+- **Chrome:** click the install icon in the address bar, or **⋮ → Cast, save, and share → Install page as app…**. Then right-click its Dock icon and choose **Options → Keep in Dock**.
+
+It opens in its own window with the Trip Workshop icon.
+
+- **Updating:** run `git pull && npm run mac:install`.
+- **Removing:** run `npm run mac:uninstall`, then drag the icon out of the Dock. Your trips stay in `data/`.
+- **Logs:** `~/Library/Logs/TripWorkshop/server.log`
+
 ## What's in the app
 
 - **Trips:** destination, dates, travelers and budget. Every search form is pre-filled from these.
