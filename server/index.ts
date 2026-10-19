@@ -8,14 +8,13 @@ import { TripStore } from "./db.ts";
 import { createEditCatalog } from "./edit.ts";
 import { createMaps } from "./maps.ts";
 import { createRegistry } from "./providers/index.ts";
-import { startWatcher } from "./watch.ts";
 
 const store = new TripStore(config.dataFile);
 const edit = createEditCatalog({ cache: store });
 const registry = createRegistry(config.keys, { edit });
 const maps = createMaps({ googleKey: config.googleMapsKey, offline: config.mapsOffline });
 const auth = createAuth({ password: config.appPassword, secret: config.sessionSecret });
-const app = createApp({ store, registry, maps, edit, auth, cronSecret: config.cronSecret, travelBudget: config.travelBudget });
+const app = createApp({ store, registry, maps, edit, auth, travelBudget: config.travelBudget });
 
 // In production, serve the built web app from the same port.
 const dist = resolve("dist");
@@ -27,5 +26,4 @@ if (process.env.NODE_ENV === "production" && existsSync(dist)) {
 app.listen(config.port, () => {
   console.log(`Trip Workshop API listening on http://localhost:${config.port}`);
   console.log(`Routing: ${config.mapsOffline ? "offline estimates" : maps.routingProvider}`);
-  startWatcher(store, registry, config.watchIntervalMinutes);
 });

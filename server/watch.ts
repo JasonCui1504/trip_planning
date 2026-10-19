@@ -55,12 +55,3 @@ export async function refreshWatches(store: Store, registry: Registry, asOf: str
   }
   return out;
 }
-
-/** Background job: wakes up periodically and refreshes watches that are a day old. */
-export function startWatcher(store: Store, registry: Registry, intervalMinutes: number, today = localToday) {
-  const tick = () => refreshWatches(store, registry, today()).catch((err) => console.error("Price watcher:", err));
-  void tick();
-  const timer = setInterval(tick, intervalMinutes * 60_000);
-  timer.unref();
-  return () => clearInterval(timer);
-}

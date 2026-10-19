@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Trip, Watch } from "../shared/types.ts";
+import type { PriceGrid, Trip, Watch } from "../shared/types.ts";
 
 /** Small cached blobs (e.g. the Chase Edit hotel list), with when they were saved. */
 export interface CacheStore {
@@ -18,6 +18,10 @@ export interface Store extends CacheStore {
   getWatch(id: string): Promise<Watch | undefined>;
   saveWatch(watch: Watch): Promise<Watch>;
   removeWatch(id: string): Promise<boolean>;
+  listGrids(): Promise<PriceGrid[]>;
+  getGrid(id: string): Promise<PriceGrid | undefined>;
+  saveGrid(grid: PriceGrid): Promise<PriceGrid>;
+  removeGrid(id: string): Promise<boolean>;
 }
 
 /** Older records predate some fields; fill in defaults. */
@@ -31,6 +35,7 @@ export class TripStore implements Store {
   private cache = new Map<string, { value: string; savedAt: number }>();
   private trips = new Map<string, Trip>();
   private watches = new Map<string, Watch>();
+  private grids = new Map<string, PriceGrid>();
   private loaded: Promise<void> | null = null;
   private writing: Promise<void> = Promise.resolve();
 
@@ -40,9 +45,10 @@ export class TripStore implements Store {
     this.loaded ??= (async () => {
       if (!this.file) return;
       try {
-        const raw = JSON.parse(await readFile(this.file, "utf8")) as { trips?: Trip[]; watches?: Watch[] };
+        const raw = JSON.parse(await readFile(this.file, "utf8")) as { trips?: Trip[]; watches?: Watch[]; grids?: PriceGrid[] };
         for (const trip of raw.trips ?? []) this.trips.set(trip.id, upgradeTrip(trip));
         for (const watch of raw.watches ?? []) this.watches.set(watch.id, watch);
+        for (const grid of raw.grids ?? []) this.grids.set(grid.id, grid);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }
@@ -53,7 +59,7 @@ export class TripStore implements Store {
   private persist(): Promise<void> {
     const file = this.file;
     if (!file) return Promise.resolve();
-    const snapshot = JSON.stringify({ trips: [...this.trips.values()], watches: [...this.watches.values()] }, null, 2);
+    const snapshot = JSON.stringify({ trips: [...this.trips.values()], watches: [...this.watches.values()], grids: [...this.grids.values()] }, null, 2);
     // Serialize writes and write-then-rename so a crash never leaves a half file.
     this.writing = this.writing.then(async () => {
       await mkdir(dirname(file), { recursive: true });
@@ -107,6 +113,30 @@ export class TripStore implements Store {
   async removeWatch(id: string): Promise<boolean> {
     await this.load();
     const existed = this.watches.delete(id);
+    if (existed) await this.persist();
+    return existed;
+  }
+
+  async listGrids(): Promise<PriceGrid[]> {
+    await this.load();
+    return [...this.grids.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async getGrid(id: string): Promise<PriceGrid | undefined> {
+    await this.load();
+    return this.grids.get(id);
+  }
+
+  async saveGrid(grid: PriceGrid): Promise<PriceGrid> {
+    await this.load();
+    this.grids.set(grid.id, grid);
+    await this.persist();
+    return grid;
+  }
+
+  async removeGrid(id: string): Promise<boolean> {
+    await this.load();
+    const existed = this.grids.delete(id);
     if (existed) await this.persist();
     return existed;
   }

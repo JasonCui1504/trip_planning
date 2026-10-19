@@ -8,7 +8,7 @@ import { Modal } from "./Modal.tsx";
  * Send the trip to the travel budget on jascui.com. A login typed here is
  * used for this export only; the server can also keep one in its env vars.
  */
-export function ExportModal({ trip, onDone, onClose }: { trip: Trip; onDone: (trip: Trip) => void; onClose: () => void }) {
+export function ExportModal({ trip, plan: initialPlan = "", onDone, onClose }: { trip: Trip; plan?: string; onDone: (trip: Trip) => void; onClose: () => void }) {
   const [info, setInfo] = useState<{ url: string; savedLogin: boolean } | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -16,7 +16,7 @@ export function ExportModal({ trip, onDone, onClose }: { trip: Trip; onDone: (tr
   const [error, setError] = useState("");
   const [result, setResult] = useState<Trip | null>(null);
   // "" = everything saved; otherwise one Workshop plan with its own schedule.
-  const [planId, setPlanId] = useState("");
+  const [planId, setPlanId] = useState(initialPlan);
 
   useEffect(() => {
     api.travelBudget().then(setInfo).catch((e) => setError(e.message));

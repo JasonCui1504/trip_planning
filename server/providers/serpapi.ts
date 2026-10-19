@@ -137,12 +137,19 @@ export function mapGoogleFlights(data: Record<string, unknown>, params: FlightSe
     });
 
   const insights: string[] = [];
-  const pi = data.price_insights as { lowest_price?: number; price_level?: string; typical_price_range?: number[] } | undefined;
+  const pi = data.price_insights as { lowest_price?: number; price_level?: string; typical_price_range?: number[]; price_history?: unknown[] } | undefined;
   if (pi?.price_level) {
     const range = pi.typical_price_range?.length === 2 ? ` (usually $${pi.typical_price_range[0].toLocaleString()}–$${pi.typical_price_range[1].toLocaleString()})` : "";
     insights.push(`Google Flights says prices for this trip are ${pi.price_level} right now${range}.`);
   }
-  return { offers, insights };
+  // Google's own record of this route's price, [unix seconds, price] per day.
+  const history = (pi?.price_history ?? [])
+    .filter((p): p is [number, number] => Array.isArray(p) && typeof p[0] === "number" && typeof p[1] === "number")
+    .map(([t, amount]) => ({ date: new Date(t * 1000).toISOString().slice(0, 10), amount }));
+  const priceInsight = pi
+    ? { level: pi.price_level, typical: pi.typical_price_range?.length === 2 ? ([pi.typical_price_range[0], pi.typical_price_range[1]] as [number, number]) : undefined, history }
+    : undefined;
+  return { offers, insights, priceInsight };
 }
 
 export const serpapiFlights: SearchProvider<"flights"> = {

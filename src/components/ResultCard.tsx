@@ -127,7 +127,7 @@ export function ResultCard({ offer, saved, comparing, watching, onSave, onBook, 
             </a>
           )}
           {(offer.category === "flights" || offer.category === "hotels" || offer.category === "cars") && (
-            <button className={`btn btn-ghost btn-sm ${watching ? "is-watching" : ""}`} onClick={onWatch} disabled={watching} title="Re-check this price every day on the Price watch dashboard">
+            <button className={`btn btn-ghost btn-sm ${watching ? "is-watching" : ""}`} onClick={onWatch} disabled={watching} title="Keep this option on the Price watch dashboard and re-check it whenever you refresh there">
               <Icon name="eye" size={14} /> {watching ? "Watching" : "Watch price"}
             </button>
           )}

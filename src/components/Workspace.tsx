@@ -30,13 +30,16 @@ export interface TripActions {
   deleteItem: (itemId: string) => Promise<void>;
   updateTrip: (patch: Partial<Trip>) => Promise<void>;
   editItem: (item: TripItem | "new") => void;
+  /** Send the trip, or one Workshop plan, to the travel budget. */
+  exportPlan: (scenarioId?: string) => void;
 }
 
 export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState("");
   const [editingTrip, setEditingTrip] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  // null = closed; "" = the whole trip; otherwise a Workshop plan's id.
+  const [exporting, setExporting] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<TripItem | "new" | null>(null);
   // Search state lives here so results survive switching tabs.
   const [search, setSearch] = useState<SearchState>({ category: "flights", params: {}, results: {} as Partial<Record<Category, SearchResponse>> });
@@ -72,6 +75,7 @@ export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
     deleteItem: (itemId) => run(() => api.deleteItem(trip.id, itemId)),
     updateTrip: (patch) => run(() => api.updateTrip(trip.id, patch)),
     editItem: setEditingItem,
+    exportPlan: (scenarioId) => setExporting(scenarioId ?? ""),
   };
 
   const booked = trip.items.filter((i) => i.status === "booked");
@@ -115,7 +119,7 @@ export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
             <button className="btn btn-ghost" onClick={() => setEditingTrip(true)}>
               Edit trip
             </button>
-            <button className="btn btn-secondary" onClick={() => setExporting(true)}>
+            <button className="btn btn-secondary" onClick={() => setExporting("")}>
               <Icon name="external" size={14} /> Export to travel budget
             </button>
           </div>
@@ -168,7 +172,7 @@ export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
         </Modal>
       )}
 
-      {exporting && <ExportModal trip={trip} onDone={setTrip} onClose={() => setExporting(false)} />}
+      {exporting !== null && <ExportModal trip={trip} plan={exporting} onDone={setTrip} onClose={() => setExporting(null)} />}
 
       {editingItem && <ItemModal trip={trip} item={editingItem === "new" ? null : editingItem} actions={actions} onClose={() => setEditingItem(null)} />}
     </div>

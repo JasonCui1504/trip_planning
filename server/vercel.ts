@@ -9,8 +9,7 @@ import { RedisStore, redisConfigFromEnv } from "./redis.ts";
 
 /**
  * Entry point for Vercel. Each request runs the same Express app as local
- * development, but storage is Redis (Vercel's filesystem doesn't persist) and
- * the daily price check comes from Vercel Cron instead of a timer.
+ * development, but storage is Redis (Vercel's filesystem doesn't persist).
  * Bundled to build/server.mjs by `npm run build:vercel`; api/index.js serves it.
  */
 
@@ -31,7 +30,6 @@ function build() {
     maps: createMaps({ googleKey: config.googleMapsKey, offline: config.mapsOffline }),
     edit,
     auth: createAuth({ password: config.appPassword, secret: config.sessionSecret }),
-    cronSecret: config.cronSecret,
     travelBudget: config.travelBudget,
   });
 }

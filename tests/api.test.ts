@@ -1,6 +1,6 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { CATEGORIES, offerToItem, type Offer, type SearchResponse, type Trip, type TripItem } from "../shared/types.ts";
+import { CATEGORIES, gridCells, offerToItem, type Offer, type PriceGrid, type SearchResponse, type Trip, type TripItem } from "../shared/types.ts";
 import { createApp } from "../server/app.ts";
 import { config } from "../server/config.ts";
 import { TripStore } from "../server/db.ts";
@@ -212,6 +212,85 @@ describe("scenarios", () => {
     expect((after.scenarios as Scenario[])[0].itemIds).toEqual([]);
 
     await request(app).patch(`/api/trips/${trip.id}`).send({ scenarios: [{ name: "" }] }).expect(400);
+  });
+});
+
+describe("price grids", () => {
+  const flightGrid = { kind: "flights", name: "Bay Area", origins: "sfo, SFO", destinations: ["NRT"], dates: ["2027-04-01", "2027-04-02"], nights: 7, travelers: 2, cabin: "economy" };
+
+  it("checks every route × date and records the cheapest, nonstop and Google's view", async () => {
+    const { app, calls } = makeLiveApp();
+    const grid = (await request(app).post("/api/grids").send(flightGrid).expect(201)).body as PriceGrid;
+    expect(grid.origins).toEqual(["SFO"]); // de-duplicated and upper-cased
+    const keys = gridCells(grid).map((c) => c.key);
+    expect(keys).toEqual(["SFO|NRT|2027-04-01", "SFO|NRT|2027-04-02"]);
+
+    const checked = (await request(app).post(`/api/grids/${grid.id}/check`).send({ keys }).expect(200)).body as PriceGrid;
+    const cell = checked.cells["SFO|NRT|2027-04-01"];
+    // The one-stop is cheapest; the nonstop's price is kept alongside.
+    expect(cell.history).toEqual([{ date: "2027-01-10", low: 1420, alt: 1840 }]);
+    expect(cell.options.map((o) => [o.title, o.stops])).toEqual([["Alaska + Japan Airlines · 1 stop", 1], ["United · Nonstop", 0]]);
+    expect(cell).toMatchObject({ level: "low", typical: [1500, 2300] });
+    expect(cell.googleHistory!.map((p) => p.amount)).toEqual([1980, 1910, 1840]);
+    const serp = calls.filter((c) => c.url.host === "serpapi.com");
+    expect(serp.map((c) => c.url.searchParams.get("return_date"))).toEqual(["2027-04-08", "2027-04-09"]);
+
+    await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: [] }).expect(400);
+  });
+
+  it("compares hotel areas with the median and the cheapest Chase Edit stay", async () => {
+    const { app } = makeLiveApp();
+    const grid = (await request(app).post("/api/grids").send({ kind: "hotels", destinations: ["Tokyo"], dates: ["2027-04-01"], nights: 7, travelers: 2 }).expect(201)).body as PriceGrid;
+    const checked = (await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: ["Tokyo|2027-04-01"] })).body as PriceGrid;
+    const cell = checked.cells["Tokyo|2027-04-01"];
+    expect(cell.history[0]).toEqual({ date: "2027-01-10", low: 1002, alt: 4270, median: 2636 });
+    // Enough is kept to save the stay to a trip from the grid.
+    expect(cell.options.find((o) => o.edit)).toMatchObject({ title: "Andaz Tokyo Toranomon Hills", edit: { brand: "Hyatt" }, start: "2027-04-01T15:00", provider: "Hotels.com" });
+  });
+
+  it("keeps a point per check day and keeps results through edits", async () => {
+    let day = "2027-01-10";
+    const { app } = makeLiveApp(() => day);
+    const grid = (await request(app).post("/api/grids").send(flightGrid)).body as PriceGrid;
+    const keys = ["SFO|NRT|2027-04-01"];
+    await request(app).post(`/api/grids/${grid.id}/check`).send({ keys });
+    await request(app).post(`/api/grids/${grid.id}/check`).send({ keys }); // same day: replaces, doesn't add
+    day = "2027-01-13";
+    await request(app).post(`/api/grids/${grid.id}/check`).send({ keys });
+
+    const edited = (await request(app).patch(`/api/grids/${grid.id}`).send({ dates: ["2027-04-01", "2027-04-05"] }).expect(200)).body as PriceGrid;
+    expect(Object.keys(edited.cells)).toEqual(["SFO|NRT|2027-04-01"]);
+    expect(edited.cells["SFO|NRT|2027-04-01"].history.map((h) => h.date)).toEqual(["2027-01-10", "2027-01-13"]);
+  });
+
+  it("keeps grids within the free quotas and reports failures on the cell", async () => {
+    const app = makeApp();
+    const big = { ...flightGrid, origins: ["BWI", "DCA", "IAD"], destinations: ["SFO", "SJC", "OAK"], dates: ["2027-04-01", "2027-04-02", "2027-04-03", "2027-04-04", "2027-04-05"] };
+    expect((await request(app).post("/api/grids").send(big).expect(400)).body.error).toMatch(/45 searches per check/);
+    const grid = (await request(app).post("/api/grids").send(flightGrid)).body as PriceGrid;
+    const checked = (await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: ["SFO|NRT|2027-04-01"] })).body as PriceGrid;
+    expect(checked.cells["SFO|NRT|2027-04-01"]).toMatchObject({ history: [], error: "No live flight source is connected" });
+    await request(app).delete(`/api/grids/${grid.id}`).expect(204);
+    await request(app).get(`/api/grids/${grid.id}`).expect(404);
+  });
+});
+
+describe("connection check", () => {
+  it("reports SerpApi searches left and whether Hotels.com answers", async () => {
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.host === "serpapi.com") return new Response(JSON.stringify({ plan_name: "Free Plan", searches_per_month: 250, plan_searches_left: 231 }));
+      return new Response(JSON.stringify({ message: "You are not subscribed to this API." }), { status: 403 });
+    }) as typeof fetch;
+    const edit = fakeEdit();
+    const app = createApp({ store: new TripStore(null), registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, keys: { ...noKeys, SERPAPI_API_KEY: "k", RAPIDAPI_KEY: "r" }, providerFetch: fetchImpl });
+    const res = await request(app).get("/api/providers/check").expect(200);
+    expect(res.body).toEqual([
+      { name: "SerpApi (Google Flights)", configured: true, ok: true, detail: "Free Plan: 231 of 250 searches left this month" },
+      { name: "Hotels.com (RapidAPI)", configured: true, ok: false, detail: "You are not subscribed to this API." },
+    ]);
+    const none = await request(makeApp()).get("/api/providers/check");
+    expect(none.body.every((r: { configured: boolean }) => !r.configured)).toBe(true);
   });
 });
 
@@ -501,7 +580,7 @@ describe("Chase Edit list", () => {
 });
 
 describe("password login", () => {
-  const makeAuthed = (cronSecret?: string) => {
+  const makeAuthed = () => {
     const edit = fakeEdit();
     return createApp({
       store: new TripStore(null),
@@ -509,7 +588,6 @@ describe("password login", () => {
       maps: createMaps({ offline: true }),
       edit,
       auth: createAuth({ password: "correct horse" }),
-      cronSecret,
     });
   };
 
@@ -534,11 +612,8 @@ describe("password login", () => {
     await request(app).post("/api/login").send({ password: "correct horse" }).expect(429);
   });
 
-  it("only lets the scheduler run the daily price check", async () => {
-    await request(makeAuthed("s3cret")).get("/api/cron/watch").expect(401);
-    await request(makeAuthed("s3cret")).get("/api/cron/watch").set("Authorization", "Bearer s3cret").expect(200);
-    await request(makeAuthed()).get("/api/cron/watch").expect(401); // no secret configured + password on = closed
-    await request(makeApp()).get("/api/cron/watch").expect(200); // local, no password
+  it("has no scheduled price checks to call", async () => {
+    await request(makeApp()).get("/api/cron/watch").expect(404);
   });
 });
 

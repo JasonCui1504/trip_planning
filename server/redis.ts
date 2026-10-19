@@ -1,4 +1,4 @@
-import type { Trip, Watch } from "../shared/types.ts";
+import type { PriceGrid, Trip, Watch } from "../shared/types.ts";
 import { upgradeTrip, type Store } from "./db.ts";
 
 /**
@@ -6,7 +6,7 @@ import { upgradeTrip, type Store } from "./db.ts";
  * (where the filesystem doesn't persist). Vercel's Upstash integration sets
  * KV_REST_API_URL / KV_REST_API_TOKEN; plain Upstash uses the UPSTASH_* names.
  *
- * Layout: hash "tw:trips" and hash "tw:watches" (id → JSON), and
+ * Layout: hashes "tw:trips", "tw:watches" and "tw:grids" (id → JSON), and
  * "tw:cache:<key>" strings holding { value, savedAt }.
  */
 
@@ -23,6 +23,7 @@ export function redisConfigFromEnv(env = process.env): RedisConfig | null {
 
 const TRIPS = "tw:trips";
 const WATCHES = "tw:watches";
+const GRIDS = "tw:grids";
 
 export class RedisStore implements Store {
   constructor(
@@ -87,6 +88,23 @@ export class RedisStore implements Store {
 
   async removeWatch(id: string) {
     return (await this.command<number>("HDEL", WATCHES, id)) > 0;
+  }
+
+  async listGrids() {
+    return (await this.values<PriceGrid>(GRIDS)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  getGrid(id: string) {
+    return this.one<PriceGrid>(GRIDS, id);
+  }
+
+  async saveGrid(grid: PriceGrid) {
+    await this.command("HSET", GRIDS, grid.id, JSON.stringify(grid));
+    return grid;
+  }
+
+  async removeGrid(id: string) {
+    return (await this.command<number>("HDEL", GRIDS, id)) > 0;
   }
 
   async getCache(key: string) {
