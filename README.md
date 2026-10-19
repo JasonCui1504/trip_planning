@@ -43,6 +43,31 @@ It opens in its own window with the Trip Workshop icon.
 - **Removing:** run `npm run mac:uninstall`, then drag the icon out of the Dock. Your trips stay in `data/`.
 - **Logs:** `~/Library/Logs/TripWorkshop/server.log`
 
+## Put it online at trips.jascui.com (free)
+
+The app deploys to [Vercel](https://vercel.com)'s free Hobby plan, with a free [Upstash Redis](https://upstash.com) database for storage:
+
+- **Website and server:** Vercel runs the API as a serverless function.
+- **Storage:** Upstash Redis, because Vercel doesn't keep files between requests.
+- **Daily price check:** a Vercel Cron job. The free plan allows one run a day, which is all Price watch needs.
+- **Login:** a password (`APP_PASSWORD`), so only you can see your trips or use your API credits.
+
+You do this once:
+
+1. **Import the repo.** In Vercel: **Add New → Project → Import `JasonCui1504/trip_planning`**. Leave the framework settings alone, since `vercel.json` sets the build, then click **Deploy**. The first deploy will show "Storage isn't set up"; that's expected.
+2. **Add storage.** In the project, open **Storage → Create → Upstash (Redis) → Free plan**, then **Connect** it to the project. This adds `KV_REST_API_URL` and `KV_REST_API_TOKEN` for you.
+3. **Set environment variables** under **Settings → Environment Variables**:
+   - `APP_PASSWORD`: the password you'll log in with (required)
+   - `CRON_SECRET`: any long random string (run `openssl rand -hex 32` in Terminal to make one)
+   - `APP_TIMEZONE`: e.g. `America/Los_Angeles`
+   - `SERPAPI_API_KEY`: optional, turns on live Google Flights and Hotels prices
+4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**, then open the `*.vercel.app` link and log in.
+5. **Add your domain.** In **Settings → Domains**, add `trips.jascui.com`. Vercel shows one DNS record to create where jascui.com's DNS lives, normally a **CNAME** named `trips` pointing to `cname.vercel-dns.com`. If jascui.com's DNS is already on Vercel, this happens automatically. HTTPS is set up for you.
+
+From then on, every push to the repo redeploys the site automatically. The daily price check runs at about 14:00 UTC (7am Pacific); change the time under `crons` in `vercel.json`.
+
+Data you have on your Mac (`data/trips.json`) doesn't move online automatically. Ask if you want an import button.
+
 ## What's in the app
 
 - **Trips:** destination, dates, travelers and budget. Every search form is pre-filled from these.
@@ -64,7 +89,10 @@ server/
   index.ts                 Starts the API; serves dist/ in production
   app.ts                   Express routes (/api/search/:category, /api/trips, items)
   validate.ts              Request validation
-  db.ts                    JSON-file store for trips and price watches (swap for SQLite/Postgres later)
+  db.ts                    Store interface + JSON-file store (local)
+  redis.ts                 Upstash Redis store (hosted)
+  auth.ts                  Password login (on when APP_PASSWORD is set)
+  vercel.ts                Vercel entry point (bundled to build/server.mjs; served by api/index.js)
   edit.ts                  Chase Edit hotel list (fetched from edithotelsearch.com, cached weekly)
   maps.ts                  Geocoding (OpenStreetMap Nominatim) + driving routes (OSRM, or Google with a key)
   watch.ts                 Daily price-watch job
@@ -103,7 +131,7 @@ To add another provider, implement `SearchProvider` (see `server/providers/index
 
 The Stays tab lists the Chase Sapphire Reserve Edit hotels at your destination. The list comes from [edithotelsearch.com](https://edithotelsearch.com/), a community site that isn't affiliated with Chase. Its brand list flags the hotels that also get the 2026 $250 Select Hotels credit. Live hotel results that are in the Edit collection get a **Chase Edit** badge.
 
-The server fetches the list on first use and caches it in `data/edit-hotels.json` for a week. If the site can't be reached, the cached copy is used. Always confirm on Chase Travel before booking.
+The server fetches the list on first use and caches it for a week (in `data/` locally, or in Redis when hosted). If the site can't be reached, the cached copy is used. Always confirm on Chase Travel before booking.
 
 ## Maps & driving times
 
@@ -117,7 +145,7 @@ To use Google Maps for routing instead, set `GOOGLE_MAPS_API_KEY` (Routes API). 
 
 ## Known prototype limits
 
-- Single user with no login. Data lives in a local JSON file.
+- Single user. Login is one shared password, not separate accounts.
 - Mock flight times ignore time zones.
 - Price watch only runs while the server is running. It catches up on its next start, but missed days aren't backfilled.
 - Drive legs are priced as fuel only. Tolls, parking and taxis/trains aren't modelled yet.

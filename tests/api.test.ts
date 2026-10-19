@@ -4,7 +4,9 @@ import { CATEGORIES, offerToItem, type Offer, type SearchResponse, type Trip } f
 import { createApp } from "../server/app.ts";
 import { config } from "../server/config.ts";
 import { TripStore } from "../server/db.ts";
+import { createAuth } from "../server/auth.ts";
 import { createEditCatalog, parseEditPage, sameHotel } from "../server/edit.ts";
+import { RedisStore } from "../server/redis.ts";
 import { createMaps, decodePolyline } from "../server/maps.ts";
 import { editPage } from "./fixtures/edit.ts";
 import { googleFlights, googleHotels } from "./fixtures/serpapi.ts";
@@ -12,7 +14,7 @@ import { createRegistry } from "../server/providers/index.ts";
 import type { Scenario, Watch } from "../shared/types.ts";
 
 const noKeys = Object.fromEntries(Object.keys(config.keys).map((k) => [k, ""])) as typeof config.keys;
-const fakeEdit = () => createEditCatalog({ cacheFile: null, fetch: async () => new Response(editPage) });
+const fakeEdit = () => createEditCatalog({ fetch: async () => new Response(editPage) });
 const makeApp = (today = () => "2027-01-10") => {
   const edit = fakeEdit();
   return createApp({ store: new TripStore(null), registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, today });
@@ -288,5 +290,80 @@ describe("Chase Edit list", () => {
     expect(res.body.total).toBe(3);
     expect(res.body.hotels.map((h: { name: string }) => h.name)).toEqual(["Andaz Tokyo Toranomon Hills", "InterContinental Tokyo Bay"]);
     await request(makeApp()).get("/api/edit").expect(400);
+  });
+});
+
+describe("password login", () => {
+  const makeAuthed = (cronSecret?: string) => {
+    const edit = fakeEdit();
+    return createApp({
+      store: new TripStore(null),
+      registry: createRegistry(noKeys, { edit }),
+      maps: createMaps({ offline: true }),
+      edit,
+      auth: createAuth({ password: "correct horse" }),
+      cronSecret,
+    });
+  };
+
+  it("keeps the API closed until you log in", async () => {
+    const app = makeAuthed();
+    expect((await request(app).get("/api/session")).body).toEqual({ authRequired: true, authenticated: false });
+    await request(app).get("/api/trips").expect(401);
+    await request(app).get("/api/health").expect(200);
+    await request(app).post("/api/login").send({ password: "wrong" }).expect(401);
+
+    const login = await request(app).post("/api/login").send({ password: "correct horse" }).expect(200);
+    const cookie = login.headers["set-cookie"][0].split(";")[0];
+    expect(login.headers["set-cookie"][0]).toMatch(/HttpOnly; SameSite=Lax/);
+    await request(app).get("/api/trips").set("Cookie", cookie).expect(200);
+    await request(app).get("/api/trips").set("Cookie", `${cookie.slice(0, -2)}xx`).expect(401);
+    await request(app).get("/api/trips").set("Cookie", "tw_session=99999999999999.forged").expect(401);
+  });
+
+  it("rate-limits password guessing", async () => {
+    const app = makeAuthed();
+    for (let i = 0; i < 10; i++) await request(app).post("/api/login").send({ password: `guess${i}` }).expect(401);
+    await request(app).post("/api/login").send({ password: "correct horse" }).expect(429);
+  });
+
+  it("only lets the scheduler run the daily price check", async () => {
+    await request(makeAuthed("s3cret")).get("/api/cron/watch").expect(401);
+    await request(makeAuthed("s3cret")).get("/api/cron/watch").set("Authorization", "Bearer s3cret").expect(200);
+    await request(makeAuthed()).get("/api/cron/watch").expect(401); // no secret configured + password on = closed
+    await request(makeApp()).get("/api/cron/watch").expect(200); // local, no password
+  });
+});
+
+describe("Redis store", () => {
+  /** Minimal in-memory stand-in for Upstash's REST API. */
+  function fakeUpstash() {
+    const db = new Map<string, Map<string, string> | string>();
+    return (async (_url: string | URL | Request, init?: RequestInit) => {
+      const [cmd, key, ...rest] = JSON.parse(String(init!.body)) as string[];
+      const hash = (db.get(key) as Map<string, string>) ?? new Map<string, string>();
+      const result =
+        cmd === "HSET" ? (db.set(key, hash.set(rest[0], rest[1])), 1)
+        : cmd === "HGET" ? hash.get(rest[0]) ?? null
+        : cmd === "HGETALL" ? [...hash].flat()
+        : cmd === "HDEL" ? (hash.delete(rest[0]) ? 1 : 0)
+        : cmd === "SET" ? (db.set(key, rest[0]), "OK")
+        : cmd === "GET" ? (typeof db.get(key) === "string" ? db.get(key) : null)
+        : null;
+      return new Response(JSON.stringify({ result }));
+    }) as typeof fetch;
+  }
+
+  it("runs the whole trip flow on Redis", async () => {
+    const store = new RedisStore({ url: "https://redis.test", token: "t" }, fakeUpstash());
+    const edit = createEditCatalog({ cache: store, fetch: async () => new Response(editPage) });
+    const app = createApp({ store, registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, today: () => "2027-01-10" });
+    const trip = (await request(app).post("/api/trips").send(tripInput).expect(201)).body as Trip;
+    await request(app).patch(`/api/trips/${trip.id}`).send({ notes: "hello" }).expect(200);
+    expect((await request(app).get("/api/trips")).body[0]).toMatchObject({ id: trip.id, notes: "hello", scenarios: [] });
+    await request(app).get("/api/edit?location=Tokyo").expect(200);
+    expect(await store.getCache("edit-hotels")).toMatchObject({ value: expect.stringContaining("Andaz") });
+    await request(app).delete(`/api/trips/${trip.id}`).expect(204);
+    expect((await request(app).get("/api/trips")).body).toEqual([]);
   });
 });

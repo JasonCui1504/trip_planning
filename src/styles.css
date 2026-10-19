@@ -440,3 +440,8 @@ img.thumb { object-fit: cover; border: 1px solid var(--border); }
 @media (max-width: 640px) {
   .edit-list li { grid-template-columns: 1fr; }
 }
+
+/* ---------- Login ---------- */
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+.login-card { width: min(360px, 100%); display: grid; gap: 1rem; padding: 1.8rem; }
+.login-card h1 { font-size: 2rem; font-weight: 300; }

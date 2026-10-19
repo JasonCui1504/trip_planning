@@ -1,11 +1,10 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import type { EditHotel } from "../shared/types.ts";
+import type { CacheStore } from "./db.ts";
 
 /**
  * Chase Sapphire Reserve's "The Edit" hotel collection, as published by
  * edithotelsearch.com (a community-built list of ~1,300 properties). The page
- * embeds the list as JSON; we fetch it, cache it on disk for a week, and use
+ * embeds the list as JSON; we fetch it, cache it for a week (on disk or in Redis), and use
  * it to badge hotel results and to browse Edit hotels by destination.
  *
  * The list isn't official — always verify on Chase Travel before booking.
@@ -70,14 +69,14 @@ export function inLocation(hotel: EditHotel, location: string): boolean {
   return want.length > 0 && want.every((w) => have.has(w));
 }
 
-export function createEditCatalog({ cacheFile, offline = false, fetch: fetchImpl = fetch }: { cacheFile: string | null; offline?: boolean; fetch?: typeof fetch }) {
+export function createEditCatalog({ cache, offline = false, fetch: fetchImpl = fetch }: { cache?: CacheStore; offline?: boolean; fetch?: typeof fetch }) {
   let snapshot: Promise<EditSnapshot> | null = null;
 
   async function readCache(): Promise<{ snap: EditSnapshot; fresh: boolean } | null> {
-    if (!cacheFile) return null;
+    const hit = await cache?.getCache("edit-hotels").catch(() => null);
+    if (!hit) return null;
     try {
-      const [info, text] = await Promise.all([stat(cacheFile), readFile(cacheFile, "utf8")]);
-      return { snap: JSON.parse(text) as EditSnapshot, fresh: Date.now() - info.mtimeMs < MAX_AGE_MS };
+      return { snap: JSON.parse(hit.value) as EditSnapshot, fresh: Date.now() - hit.savedAt < MAX_AGE_MS };
     } catch {
       return null;
     }
@@ -90,10 +89,7 @@ export function createEditCatalog({ cacheFile, offline = false, fetch: fetchImpl
       const res = await fetchImpl(EDIT_SOURCE_URL, { headers: { "User-Agent": "TripWorkshop/0.1 (personal trip-planning prototype)" }, signal: AbortSignal.timeout(15_000) });
       if (!res.ok) throw new Error(`edithotelsearch.com responded ${res.status}`);
       const snap: EditSnapshot = { hotels: parseEditPage(await res.text()), fetchedAt: new Date().toISOString(), source: EDIT_SOURCE_URL };
-      if (cacheFile) {
-        await mkdir(dirname(cacheFile), { recursive: true });
-        await writeFile(cacheFile, JSON.stringify(snap));
-      }
+      await cache?.setCache("edit-hotels", JSON.stringify(snap)).catch((err) => console.error("Edit cache:", err));
       return snap;
     } catch (err) {
       console.error("Edit hotel list:", (err as Error).message);

@@ -15,6 +15,8 @@ import type {
   Watch,
 } from "../shared/types.ts";
 
+export const UNAUTHORIZED_EVENT = "tw:unauthorized";
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
@@ -22,6 +24,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
+  // Session expired or never logged in: let the app show the login screen.
+  if (res.status === 401 && !url.startsWith("/api/login")) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
   return data as T;
@@ -30,6 +34,10 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 export type NewItem = Omit<TripItem, "id" | "addedAt">;
 
 export const api = {
+  session: () => request<{ authRequired: boolean; authenticated: boolean }>("GET", "/api/session"),
+  login: (password: string) => request<{ ok: true }>("POST", "/api/login", { password }),
+  logout: () => request<{ ok: true }>("POST", "/api/logout"),
+
   providers: () => request<ProviderStatus[]>("GET", "/api/providers"),
   places: (q: string) => request<Place[]>("GET", `/api/places?q=${encodeURIComponent(q)}`),
   search: <C extends Category>(category: C, params: SearchParamsMap[C]) =>

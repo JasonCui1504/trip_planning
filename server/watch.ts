@@ -1,11 +1,14 @@
 import type { Watch } from "../shared/types.ts";
-import type { TripStore } from "./db.ts";
+import type { Store } from "./db.ts";
 import type { Registry } from "./providers/index.ts";
 
-/** Today's date in the server's local time zone, YYYY-MM-DD. */
-export function localToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/**
+ * Today's date, YYYY-MM-DD, in APP_TIMEZONE (e.g. America/Los_Angeles) if set,
+ * otherwise the server's own time zone. Hosted servers usually run on UTC.
+ */
+export function localToday(timeZone = process.env.APP_TIMEZONE || undefined): string {
+  // en-CA formats dates as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
 /** The date the watched thing happens; once it's past there's nothing left to watch. */
@@ -34,7 +37,7 @@ export async function checkWatch(watch: Watch, registry: Registry, asOf: string)
 }
 
 /** Check every watch that hasn't been checked today (or all of them, if forced). */
-export async function refreshWatches(store: TripStore, registry: Registry, asOf: string, force = false): Promise<Watch[]> {
+export async function refreshWatches(store: Store, registry: Registry, asOf: string, force = false): Promise<Watch[]> {
   const out: Watch[] = [];
   for (const watch of await store.listWatches()) {
     const checkedToday = watch.history.some((h) => h.date === asOf);
@@ -54,7 +57,7 @@ export async function refreshWatches(store: TripStore, registry: Registry, asOf:
 }
 
 /** Background job: wakes up periodically and refreshes watches that are a day old. */
-export function startWatcher(store: TripStore, registry: Registry, intervalMinutes: number, today = localToday) {
+export function startWatcher(store: Store, registry: Registry, intervalMinutes: number, today = localToday) {
   const tick = () => refreshWatches(store, registry, today()).catch((err) => console.error("Price watcher:", err));
   void tick();
   const timer = setInterval(tick, intervalMinutes * 60_000);

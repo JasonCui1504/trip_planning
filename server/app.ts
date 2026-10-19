@@ -13,7 +13,8 @@ import {
   type TripItem,
   type Watch,
 } from "../shared/types.ts";
-import type { TripStore } from "./db.ts";
+import type { Store } from "./db.ts";
+import { createAuth, type Auth } from "./auth.ts";
 import type { EditCatalog } from "./edit.ts";
 import type { Maps } from "./maps.ts";
 import { ProviderInputError } from "./providers/serpapi.ts";
@@ -39,10 +40,14 @@ class NotFound extends Error {}
 const now = () => new Date().toISOString();
 
 export interface AppDeps {
-  store: TripStore;
+  store: Store;
   registry: Registry;
   maps: Maps;
   edit: EditCatalog;
+  /** Password login; omitted = open (local use). */
+  auth?: Auth;
+  /** Shared secret the scheduler sends to /api/cron/watch (Vercel sets this up from CRON_SECRET). */
+  cronSecret?: string;
   /** Injectable clock so tests can simulate several days of price checks. */
   today?: () => string;
 }
@@ -80,9 +85,31 @@ function validateScenarios(value: unknown, trip: Trip): Scenario[] {
   });
 }
 
-export function createApp({ store, registry, maps, edit, today = localToday }: AppDeps) {
+export function createApp({ store, registry, maps, edit, auth = createAuth({}), cronSecret, today = localToday }: AppDeps) {
   const app = express();
+  // Behind Vercel's proxy: trust X-Forwarded-* for the client IP and https.
+  app.set("trust proxy", true);
   app.use(express.json({ limit: "1mb" }));
+
+  // ----- Public routes: health, login, and the daily scheduler hook -----
+
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+  app.get("/api/session", auth.session);
+  app.post("/api/login", auth.login);
+  app.post("/api/logout", auth.logout);
+
+  // Called once a day by Vercel Cron (or any scheduler) to re-price watches.
+  app.get("/api/cron/watch", async (req, res) => {
+    const authorized = cronSecret ? req.headers.authorization === `Bearer ${cronSecret}` : !auth.enabled;
+    if (!authorized) return void res.status(401).json({ error: "Unauthorized" });
+    const watches = await refreshWatches(store, registry, today());
+    res.json({ checked: watches.length, date: today() });
+  });
+
+  // Everything else needs a session when a password is set.
+  app.use("/api", auth.require);
 
   const loadTrip = async (id: string) => {
     const trip = await store.get(id);
@@ -90,10 +117,6 @@ export function createApp({ store, registry, maps, edit, today = localToday }: A
     return trip;
   };
   const touch = (trip: Trip) => store.save({ ...trip, updatedAt: now() });
-
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
-  });
 
   app.get("/api/providers", (_req, res) => {
     res.json(registry.status());
