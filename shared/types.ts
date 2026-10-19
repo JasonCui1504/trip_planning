@@ -218,7 +218,29 @@ export interface Scenario {
   itemIds: string[];
   drives: DriveLeg[];
   notes: string;
+  /** This plan's own schedule: start/end times that differ from the saved item's. */
+  times?: Record<string, ScheduleTime>;
   createdAt: string;
+}
+
+export interface ScheduleTime {
+  start?: string;
+  end?: string;
+}
+
+/**
+ * The trip as one scenario sees it: only that scenario's pieces, with its own
+ * schedule applied. Used for the plan's itinerary and to export a plan.
+ */
+export function applyScenario(trip: Trip, scenario: Scenario): Trip {
+  const items = scenario.itemIds
+    .map((id) => trip.items.find((i) => i.id === id))
+    .filter((i): i is TripItem => Boolean(i))
+    .map((i) => {
+      const t = scenario.times?.[i.id];
+      return t ? { ...i, start: t.start ?? i.start, end: t.end ?? i.end } : i;
+    });
+  return { ...trip, items };
 }
 
 // ---------- Price watch ----------

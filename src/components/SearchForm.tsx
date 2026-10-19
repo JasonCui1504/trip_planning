@@ -58,6 +58,10 @@ export function SearchForm<C extends Category>({ category, trip, initial, busy, 
         <>
           {placeField("origin", "From")}
           {placeField("destination", "To")}
+          <label className="grow">
+            Also compare <span className="muted">(optional)</span>
+            <input value={text("alsoTo")} onChange={(e) => set("alsoTo", e.target.value)} placeholder="e.g. Osaka, Seoul" title="Other destinations to search at the same time, separated by commas" />
+          </label>
           {dateField("departDate", "Depart", { required: true })}
           {dateField("returnDate", "Return (optional)", { min: text("departDate") })}
           {numberField("adults", "Adults", 1, 9)}

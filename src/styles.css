@@ -433,6 +433,14 @@ img.thumb { object-fit: cover; border: 1px solid var(--border); }
 .setup-table td:nth-child(6) { min-width: 260px; }
 .trip-header-actions { display: flex; flex-direction: column; gap: 0.4rem; }
 .export-done { display: grid; gap: 1rem; }
+.schedule { display: grid; gap: 0.8rem; margin-top: 1rem; }
+.schedule-days { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+.schedule-day { display: grid; gap: 0.4rem; }
+.schedule-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.schedule-row.moved { border-color: var(--primary-dim); }
+.schedule-row .piece-main { flex: 1 1 200px; min-width: 0; }
+.schedule-times { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.schedule-times input { width: auto; }
 .site-links { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .notice-insight svg { color: var(--primary-text); }
 .edit-panel { padding: 0.8rem 1rem; display: grid; gap: 0.6rem; }

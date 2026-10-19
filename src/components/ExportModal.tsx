@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import type { Trip } from "../../shared/types.ts";
+import { applyScenario, type Trip } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { Icon } from "../icons.tsx";
 import { Modal } from "./Modal.tsx";
@@ -15,13 +15,17 @@ export function ExportModal({ trip, onDone, onClose }: { trip: Trip; onDone: (tr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Trip | null>(null);
+  // "" = everything saved; otherwise one Workshop plan with its own schedule.
+  const [planId, setPlanId] = useState("");
 
   useEffect(() => {
     api.travelBudget().then(setInfo).catch((e) => setError(e.message));
   }, []);
 
-  const scheduled = trip.items.filter((i) => i.status !== "idea" && i.start);
-  const ideas = trip.items.length - scheduled.length;
+  const plan = trip.scenarios.find((s) => s.id === planId);
+  const items = plan ? applyScenario(trip, plan).items : trip.items;
+  const scheduled = items.filter((i) => i.status !== "idea" && i.start);
+  const ideas = items.length - scheduled.length;
   const link = (result ?? trip).travelBudget;
 
   const submit = async (e: FormEvent) => {
@@ -29,7 +33,7 @@ export function ExportModal({ trip, onDone, onClose }: { trip: Trip; onDone: (tr
     setBusy(true);
     setError("");
     try {
-      const updated = await api.exportTravelBudget(trip.id, info?.savedLogin && !username ? {} : { username, password });
+      const updated = await api.exportTravelBudget(trip.id, { ...(info?.savedLogin && !username ? {} : { username, password }), scenarioId: planId || undefined });
       setResult(updated);
       onDone(updated);
     } catch (err) {
@@ -72,6 +76,19 @@ export function ExportModal({ trip, onDone, onClose }: { trip: Trip; onDone: (tr
             )}{" "}
             Dated items go on the calendar ({scheduled.length}), stays and cars fill each day, and ideas or undated items ({ideas}) go to the Ideas list.
           </p>
+          {trip.scenarios.length > 0 && (
+            <label className="span-2">
+              What to export
+              <select value={planId} onChange={(e) => setPlanId(e.target.value)}>
+                <option value="">Everything saved on the trip</option>
+                {trip.scenarios.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    Workshop plan: {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {info?.savedLogin && <p className="small muted span-2">A travel budget login is saved on the server. Leave these blank to use it.</p>}
           <label>
             Travel budget username
