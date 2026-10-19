@@ -4,9 +4,14 @@ import express from "express";
 import { createApp } from "./app.ts";
 import { config } from "./config.ts";
 import { TripStore } from "./db.ts";
+import { createMaps } from "./maps.ts";
 import { createRegistry } from "./providers/index.ts";
+import { startWatcher } from "./watch.ts";
 
-const app = createApp(new TripStore(config.dataFile), createRegistry(config.keys));
+const store = new TripStore(config.dataFile);
+const registry = createRegistry(config.keys);
+const maps = createMaps({ googleKey: config.googleMapsKey, offline: config.mapsOffline });
+const app = createApp({ store, registry, maps });
 
 // In production, serve the built web app from the same port.
 const dist = resolve("dist");
@@ -17,4 +22,6 @@ if (process.env.NODE_ENV === "production" && existsSync(dist)) {
 
 app.listen(config.port, () => {
   console.log(`Trip Workshop API listening on http://localhost:${config.port}`);
+  console.log(`Routing: ${config.mapsOffline ? "offline estimates" : maps.routingProvider}`);
+  startWatcher(store, registry, config.watchIntervalMinutes);
 });

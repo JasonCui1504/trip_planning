@@ -54,6 +54,33 @@ export interface SearchParamsMap {
   dining: DiningSearch;
 }
 
+// ---------- Maps ----------
+
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  label?: string;
+}
+
+export interface RouteResult {
+  durationMinutes: number;
+  distanceKm: number;
+  /** "osrm" = real road routing (OpenStreetMap), "google" = Google Maps, "estimate" = straight-line fallback. */
+  source: "osrm" | "google" | "estimate";
+  /** Simplified [lat, lon] path for drawing on a map. */
+  geometry: [number, number][];
+}
+
+export interface GeoResult extends GeoPoint {
+  label: string;
+  detail: string;
+}
+
+export interface ExternalLink {
+  label: string;
+  url: string;
+}
+
 // ---------- Offers (search results) ----------
 
 export interface FlightLeg {
@@ -93,6 +120,12 @@ export interface Offer {
   bookingUrl: string;
   imageHue?: number; // used to render a placeholder thumbnail
   legs?: FlightLeg[];
+  /** Map locations: airports for flights, the property for stays, etc. */
+  points?: GeoPoint[];
+  /** Time spent travelling (flights, transfers), used by the workshop. */
+  durationMinutes?: number;
+  /** The same search on other sites, for comparison shopping. */
+  altLinks?: ExternalLink[];
 }
 
 export interface SearchResponse {
@@ -126,7 +159,60 @@ export interface TripItem {
   offerId?: string;
   /** Extra points on the itinerary besides start/end, e.g. a return flight's departure. */
   moments?: { label: string; at: string }[];
+  points?: GeoPoint[];
+  durationMinutes?: number;
+  altLinks?: ExternalLink[];
   addedAt: string;
+}
+
+// ---------- Workshop scenarios ----------
+
+export interface DriveLeg {
+  id: string;
+  from: GeoPoint & { label: string };
+  to: GeoPoint & { label: string };
+  durationMinutes: number;
+  distanceKm: number;
+  source: RouteResult["source"];
+  geometry: [number, number][];
+}
+
+/**
+ * One combination of options to try out, e.g. "Fly into LAX + rent a car" vs
+ * "Fly into SFO + drive down". Items are references to saved trip items.
+ */
+export interface Scenario {
+  id: string;
+  name: string;
+  itemIds: string[];
+  drives: DriveLeg[];
+  notes: string;
+  createdAt: string;
+}
+
+// ---------- Price watch ----------
+
+export interface PricePoint {
+  date: string; // YYYY-MM-DD
+  amount: number;
+  available: boolean;
+}
+
+/** A saved search result whose price is re-checked every day. */
+export interface Watch {
+  id: string;
+  category: Category;
+  tripId?: string;
+  params: SearchParamsMap[Category];
+  offerId: string;
+  title: string;
+  subtitle: string;
+  provider: string;
+  bookingUrl: string;
+  currency: string;
+  history: PricePoint[];
+  createdAt: string;
+  lastChecked?: string;
 }
 
 export interface ChecklistItem {
@@ -148,6 +234,7 @@ export interface Trip {
   notes: string;
   items: TripItem[];
   checklist: ChecklistItem[];
+  scenarios: Scenario[];
   createdAt: string;
   updatedAt: string;
 }
@@ -195,5 +282,8 @@ export function offerToItem(offer: Offer, travelers: number, status: ItemStatus 
     details: offer.details,
     offerId: offer.id,
     moments: offer.legs?.slice(1).map((leg) => ({ label: `Return flight ${leg.from} → ${leg.to}`, at: leg.depart })),
+    points: offer.points,
+    durationMinutes: offer.durationMinutes,
+    altLinks: offer.altLinks,
   };
 }

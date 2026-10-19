@@ -30,3 +30,17 @@ export function seededRandom(seed: string) {
 }
 
 export type Rng = ReturnType<typeof seededRandom>;
+
+/**
+ * How a mock price moves from day to day, so watched prices change like real
+ * fares: a slow wave, a little daily noise, and a climb in the last few weeks
+ * before the date. Deterministic for a given offer and day.
+ */
+export function dailyPriceFactor(key: string, asOf: string, travelDate: string): number {
+  const day = Math.floor(Date.parse(`${asOf}T00:00:00Z`) / 86_400_000);
+  const phase = seededRandom(key).next() * Math.PI * 2;
+  const noise = seededRandom(`${key}|${asOf}`).next() - 0.5;
+  const daysOut = Math.round((Date.parse(`${travelDate}T00:00:00Z`) - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000);
+  const lastMinute = daysOut < 21 ? (21 - Math.max(0, daysOut)) * 0.012 : 0;
+  return 1 + 0.07 * Math.sin(day / 4 + phase) + 0.04 * noise + lastMinute;
+}

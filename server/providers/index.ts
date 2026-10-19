@@ -12,11 +12,16 @@ import { searchHotels } from "./mock/lodging.ts";
  * and register it in `liveProviders` below. When its credentials are missing
  * the registry falls back to the mock provider automatically.
  */
+export interface SearchContext {
+  /** Today's date (YYYY-MM-DD); prices are quoted as of this day. */
+  asOf: string;
+}
+
 export interface SearchProvider<C extends Category> {
   name: string;
   /** Env vars this provider needs; it is only used when all of them are set. */
   requiredKeys: KeyName[];
-  search(params: SearchParamsMap[C]): Promise<Offer[]>;
+  search(params: SearchParamsMap[C], ctx: SearchContext): Promise<Offer[]>;
 }
 
 type ProviderMap = { [C in Category]: SearchProvider<C> };
@@ -56,8 +61,15 @@ export function createRegistry(keys: Record<KeyName, string>, live: LiveProvider
     return ready ? { provider: ready, live: true } : { provider: mockProviders[category] as SearchProvider<C>, live: false };
   }
 
+  /** Run a search with whichever provider is active for the category. */
+  async function search<C extends Category>(category: C, params: SearchParamsMap[C], ctx: SearchContext) {
+    const { provider, live } = providerFor(category);
+    return { provider: provider.name, live, offers: await provider.search(params, ctx) };
+  }
+
   return {
     providerFor,
+    search,
     status(): ProviderStatus[] {
       return (Object.keys(mockProviders) as Category[]).map((category) => {
         const { provider, live } = providerFor(category);

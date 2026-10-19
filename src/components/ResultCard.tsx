@@ -13,7 +13,7 @@ export function Thumb({ hue = 180, category }: { hue?: number; category: Offer["
 
 const HIGHLIGHT_TAGS = new Set(["Cheapest", "Fastest", "Best value", "Likely to sell out", "Local favourite"]);
 
-export function ResultCard({ offer, saved, comparing, onSave, onBook, onToggleCompare }: { offer: Offer; saved?: TripItem; comparing: boolean; onSave: () => void; onBook: () => void; onToggleCompare: () => void }) {
+export function ResultCard({ offer, saved, comparing, watching, onSave, onBook, onToggleCompare, onWatch }: { offer: Offer; saved?: TripItem; comparing: boolean; watching: boolean; onSave: () => void; onBook: () => void; onToggleCompare: () => void; onWatch: () => void }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -65,6 +65,17 @@ export function ResultCard({ offer, saved, comparing, onSave, onBook, onToggleCo
           </button>
         </div>
 
+        {offer.altLinks && offer.altLinks.length > 1 && (
+          <p className="alt-links small">
+            <span className="muted">Also check:</span>
+            {offer.altLinks.slice(1).map((l) => (
+              <a key={l.label} href={l.url} target="_blank" rel="noreferrer">
+                {l.label}
+              </a>
+            ))}
+          </p>
+        )}
+
         {open && (
           <dl className="details">
             {Object.entries(offer.details).map(([k, v]) => (
@@ -101,6 +112,11 @@ export function ResultCard({ offer, saved, comparing, onSave, onBook, onToggleCo
             <a className="btn btn-primary" href={offer.bookingUrl} target="_blank" rel="noreferrer" onClick={onBook}>
               Book <Icon name="external" size={14} />
             </a>
+          )}
+          {(offer.category === "flights" || offer.category === "hotels" || offer.category === "cars") && (
+            <button className={`btn btn-ghost btn-sm ${watching ? "is-watching" : ""}`} onClick={onWatch} disabled={watching} title="Re-check this price every day on the Price watch dashboard">
+              <Icon name="eye" size={14} /> {watching ? "Watching" : "Watch price"}
+            </button>
           )}
           <label className="compare-toggle small">
             <input type="checkbox" checked={comparing} onChange={onToggleCompare} /> Compare

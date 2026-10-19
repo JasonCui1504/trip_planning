@@ -1,8 +1,9 @@
 import type { FlightLeg, FlightSearch, Offer } from "../../../shared/types.ts";
+import type { SearchContext } from "../index.ts";
 import { atMinutes } from "../../dates.ts";
-import { links } from "../links.ts";
-import { distanceKm, PLACES, resolvePlace, type MockPlace } from "./places.ts";
-import { seededRandom, type Rng } from "./random.ts";
+import { altLinks, links } from "../links.ts";
+import { airportPoint, distanceKm, PLACES, resolvePlace, type MockPlace } from "./places.ts";
+import { dailyPriceFactor, seededRandom, type Rng } from "./random.ts";
 
 const AIRLINES = [
   { name: "Skyline Air", code: "SK" },
@@ -67,7 +68,7 @@ function stopsLabel(stops: number): string {
   return stops === 0 ? "Nonstop" : `${stops} stop${stops > 1 ? "s" : ""}`;
 }
 
-export async function searchFlights(params: FlightSearch): Promise<Offer[]> {
+export async function searchFlights(params: FlightSearch, ctx: SearchContext): Promise<Offer[]> {
   const from = resolvePlace(params.origin);
   const to = resolvePlace(params.destination);
   const rng = seededRandom(`flights|${from.code}|${to.code}|${params.departDate}|${params.returnDate ?? ""}|${params.cabin}`);
@@ -79,13 +80,16 @@ export async function searchFlights(params: FlightSearch): Promise<Offer[]> {
     const airline = rng.pick(AIRLINES);
     const legs = [makeLeg(rng, from, to, params.departDate, airline)];
     if (params.returnDate) legs.push(makeLeg(rng, to, from, params.returnDate, airline));
-    const perPerson = Math.round(legs.reduce((sum, leg) => sum + legPrice(rng, leg, km), 0) * CABIN_MULTIPLIER[params.cabin]);
+    const key = legs.map((l) => `${l.flightNumber}@${l.depart}`).join("|");
+    const basePrice = legs.reduce((sum, leg) => sum + legPrice(rng, leg, km), 0) * CABIN_MULTIPLIER[params.cabin];
+    const perPerson = Math.round(basePrice * dailyPriceFactor(key, ctx.asOf, params.departDate));
     const total = perPerson * adults;
     const out = legs[0];
     const lastLeg = legs[legs.length - 1];
 
     offers.push({
-      id: `mock-fl-${from.code}-${to.code}-${params.departDate}-${i}`,
+      // Identified by its flight numbers and times, so a watched flight is found again tomorrow.
+      id: `mock-fl-${legs.map((l) => `${l.flightNumber}-${l.depart}`).join("_")}-${params.cabin}`,
       category: "flights",
       provider: "Mock flights",
       title: `${airline.name} · ${stopsLabel(out.stops)}`,
@@ -109,6 +113,9 @@ export async function searchFlights(params: FlightSearch): Promise<Offer[]> {
       bookingUrl: links.flights(from.code, to.code, params.departDate, params.returnDate),
       imageHue: (airline.code.charCodeAt(0) * 37) % 360,
       legs,
+      points: [airportPoint(from), airportPoint(to)].filter((p) => p !== undefined),
+      durationMinutes: legs.reduce((sum, leg) => sum + leg.durationMinutes, 0),
+      altLinks: altLinks.flights(from.code, to.code, params.departDate, params.returnDate),
     });
   }
 

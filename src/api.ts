@@ -1,4 +1,18 @@
-import type { Category, Offer, ProviderStatus, SearchParamsMap, SearchResponse, Trip, TripInput, TripItem, Place } from "../shared/types.ts";
+import type {
+  Category,
+  GeoPoint,
+  GeoResult,
+  Offer,
+  Place,
+  ProviderStatus,
+  RouteResult,
+  SearchParamsMap,
+  SearchResponse,
+  Trip,
+  TripInput,
+  TripItem,
+  Watch,
+} from "../shared/types.ts";
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -30,6 +44,15 @@ export const api = {
   updateItem: (tripId: string, itemId: string, patch: Partial<TripItem>) =>
     request<TripItem>("PATCH", `/api/trips/${tripId}/items/${itemId}`, patch),
   deleteItem: (tripId: string, itemId: string) => request<void>("DELETE", `/api/trips/${tripId}/items/${itemId}`),
+
+  geocode: (q: string) => request<GeoResult[]>("GET", `/api/geo/search?q=${encodeURIComponent(q)}`),
+  route: (points: GeoPoint[]) => request<RouteResult>("POST", "/api/geo/route", { points }),
+
+  watches: () => request<Watch[]>("GET", "/api/watches"),
+  watch: <C extends Category>(category: C, params: SearchParamsMap[C], offerId: string, tripId?: string) =>
+    request<Watch>("POST", "/api/watches", { category, params, offerId, tripId }),
+  refreshWatches: () => request<Watch[]>("POST", "/api/watches/refresh"),
+  unwatch: (id: string) => request<void>("DELETE", `/api/watches/${id}`),
 };
 
 export type { Offer };

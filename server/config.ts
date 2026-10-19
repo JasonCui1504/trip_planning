@@ -5,6 +5,10 @@ const env = (key: string) => process.env[key]?.trim() ?? "";
 export const config = {
   port: Number(env("PORT") || 8787),
   dataFile: env("DATA_FILE") || "data/trips.json",
+  mapsOffline: env("MAPS_OFFLINE") === "1",
+  googleMapsKey: env("GOOGLE_MAPS_API_KEY"),
+  /** How often the price watcher wakes up to check for stale watches. */
+  watchIntervalMinutes: Number(env("WATCH_INTERVAL_MINUTES") || 60),
   keys: {
     AMADEUS_CLIENT_ID: env("AMADEUS_CLIENT_ID"),
     AMADEUS_CLIENT_SECRET: env("AMADEUS_CLIENT_SECRET"),

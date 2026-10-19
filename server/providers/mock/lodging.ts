@@ -1,8 +1,9 @@
 import type { HotelSearch, Offer } from "../../../shared/types.ts";
 import { atMinutes, daysBetween } from "../../dates.ts";
-import { links } from "../links.ts";
-import { resolvePlace } from "./places.ts";
-import { seededRandom } from "./random.ts";
+import type { SearchContext } from "../index.ts";
+import { altLinks, links } from "../links.ts";
+import { nearCenter, resolvePlace } from "./places.ts";
+import { dailyPriceFactor, seededRandom } from "./random.ts";
 
 const NAME_PARTS = {
   prefix: ["The Alder", "Hotel Lumen", "The Wren", "Casa Solana", "The Linden", "Hotel Marlowe", "The Juniper", "Maison Clair", "The Harbor House", "Hotel Arden", "The Copper Fox", "Villa Serena", "The Ivy Rooms", "Hotel Nomad", "The Grand Meridian", "Driftwood Inn"],
@@ -20,7 +21,7 @@ const TYPES = [
 
 const AMENITIES = ["Free Wi-Fi", "Breakfast included", "Pool", "Gym", "Spa", "Airport shuttle", "Kitchen", "Rooftop bar", "Pet friendly", "Free cancellation", "Laundry", "Parking"];
 
-export async function searchHotels(params: HotelSearch): Promise<Offer[]> {
+export async function searchHotels(params: HotelSearch, ctx: SearchContext): Promise<Offer[]> {
   const place = resolvePlace(params.location);
   const rng = seededRandom(`hotels|${place.code}|${params.checkIn}|${params.checkOut}|${params.guests}`);
   const nights = Math.max(1, daysBetween(params.checkIn, params.checkOut));
@@ -30,7 +31,10 @@ export async function searchHotels(params: HotelSearch): Promise<Offer[]> {
     const kind = rng.pick(TYPES);
     const stars = rng.int(kind.stars[0], kind.stars[1]);
     const neighborhood = rng.pick(place.neighborhoods);
-    const nightly = Math.round(85 * place.costIndex * kind.factor * (0.8 + rng.next() * 0.6) * (1 + (params.guests > 2 ? 0.25 : 0)));
+    const id = `mock-ht-${place.code}-${params.checkIn}-${i}`;
+    // Hotel rates move less than airfares.
+    const drift = 1 + (dailyPriceFactor(id, ctx.asOf, params.checkIn) - 1) * 0.6;
+    const nightly = Math.round(85 * place.costIndex * kind.factor * (0.8 + rng.next() * 0.6) * (1 + (params.guests > 2 ? 0.25 : 0)) * drift);
     const amenities = rng.shuffle(AMENITIES).slice(0, rng.int(3, 6));
     const rating = Math.round((3.6 + rng.next() * 1.35) * 10) / 10;
     const total = nightly * nights * rooms;
@@ -39,7 +43,7 @@ export async function searchHotels(params: HotelSearch): Promise<Offer[]> {
     if (amenities.includes("Breakfast included")) tags.push("Breakfast");
 
     return {
-      id: `mock-ht-${place.code}-${params.checkIn}-${i}`,
+      id,
       category: "hotels" as const,
       provider: "Mock stays",
       title: `${name} ${neighborhood}`,
@@ -64,6 +68,8 @@ export async function searchHotels(params: HotelSearch): Promise<Offer[]> {
         "Near": rng.pick(place.landmarks),
       },
       bookingUrl: links.hotels(place.city, params.checkIn, params.checkOut, params.guests, rooms, name),
+      altLinks: altLinks.hotels(place.city, params.checkIn, params.checkOut, params.guests, rooms, name),
+      points: [nearCenter(place, seededRandom(id).next, 3.5, `${name} ${neighborhood}`)].filter((p) => p !== undefined),
       imageHue: rng.int(0, 359),
     };
   });

@@ -12,9 +12,11 @@ import { Modal } from "./Modal.tsx";
 import { SearchPanel, type SearchState } from "./SearchPanel.tsx";
 import { TripBoard } from "./TripBoard.tsx";
 import { TripForm } from "./TripForm.tsx";
+import { Workshop } from "./Workshop.tsx";
 
 const TABS: { id: WorkspaceTab; label: string; icon: IconName }[] = [
   { id: "search", label: "Search & save", icon: "search" },
+  { id: "workshop", label: "Workshop", icon: "route" },
   { id: "itinerary", label: "Itinerary", icon: "calendar" },
   { id: "budget", label: "Budget", icon: "wallet" },
   { id: "checklist", label: "Checklist & notes", icon: "list" },
@@ -127,6 +129,7 @@ export function Workspace({ id, tab }: { id: string; tab: WorkspaceTab }) {
           <TripBoard trip={trip} actions={actions} />
         </div>
       )}
+      {tab === "workshop" && <Workshop trip={trip} actions={actions} />}
       {tab === "itinerary" && <Itinerary trip={trip} actions={actions} />}
       {tab === "budget" && <Budget trip={trip} actions={actions} />}
       {tab === "checklist" && <Checklist trip={trip} actions={actions} />}

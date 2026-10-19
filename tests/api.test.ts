@@ -4,10 +4,13 @@ import { CATEGORIES, offerToItem, type Offer, type SearchResponse, type Trip } f
 import { createApp } from "../server/app.ts";
 import { config } from "../server/config.ts";
 import { TripStore } from "../server/db.ts";
+import { createMaps, decodePolyline } from "../server/maps.ts";
 import { createRegistry } from "../server/providers/index.ts";
+import type { Scenario, Watch } from "../shared/types.ts";
 
 const noKeys = Object.fromEntries(Object.keys(config.keys).map((k) => [k, ""])) as typeof config.keys;
-const makeApp = () => createApp(new TripStore(null), createRegistry(noKeys));
+const makeApp = (today = () => "2027-01-10") =>
+  createApp({ store: new TripStore(null), registry: createRegistry(noKeys), maps: createMaps({ offline: true }), today });
 
 const tripInput = { name: "Tokyo spring", origin: "New York", destination: "Tokyo", startDate: "2027-04-01", endDate: "2027-04-08", travelers: 2, budget: 6000, currency: "USD" };
 
@@ -113,5 +116,85 @@ describe("itinerary data", () => {
     const offer = (await request(app).post("/api/search/flights").send(searches.flights)).body.offers[0] as Offer;
     const item = (await request(app).post(`/api/trips/${trip.id}/items`).send(offerToItem(offer, 2)).expect(201)).body;
     expect(item.moments).toEqual([{ label: "Return flight NRT → JFK", at: offer.legs![1].depart }]);
+  });
+});
+
+describe("maps", () => {
+  it("estimates a drive when offline", async () => {
+    const res = await request(makeApp())
+      .post("/api/geo/route")
+      .send({ points: [{ lat: 35.77, lon: 140.39 }, { lat: 35.6762, lon: 139.6503 }] })
+      .expect(200);
+    expect(res.body.source).toBe("estimate");
+    expect(res.body.distanceKm).toBeGreaterThan(60);
+    expect(res.body.durationMinutes).toBeGreaterThan(40);
+  });
+
+  it("geocodes known cities without the network", async () => {
+    const res = await request(makeApp()).get("/api/geo/search?q=Lisbon").expect(200);
+    expect(res.body[0]).toMatchObject({ label: "Lisbon" });
+  });
+
+  it("rejects bad route input", async () => {
+    await request(makeApp()).post("/api/geo/route").send({ points: [{ lat: 1, lon: 2 }] }).expect(400);
+    await request(makeApp()).post("/api/geo/route").send({ points: [{ lat: 200, lon: 2 }, { lat: 1, lon: 2 }] }).expect(400);
+  });
+
+  it("decodes Google polylines", () => {
+    expect(decodePolyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@")).toEqual([[38.5, -120.2], [40.7, -120.95], [43.252, -126.453]]);
+  });
+});
+
+describe("price watch", () => {
+  it("records one price per day and survives repeated checks", async () => {
+    let day = "2027-01-10";
+    const app = makeApp(() => day);
+    const offer = (await request(app).post("/api/search/flights").send(searches.flights)).body.offers[0] as Offer;
+    const watch = (await request(app).post("/api/watches").send({ category: "flights", params: searches.flights, offerId: offer.id }).expect(201)).body as Watch;
+    expect(watch.history).toEqual([{ date: day, amount: offer.totalPrice.amount, available: true }]);
+
+    // Watching the same option again returns the existing watch.
+    const again = await request(app).post("/api/watches").send({ category: "flights", params: searches.flights, offerId: offer.id }).expect(200);
+    expect(again.body.id).toBe(watch.id);
+
+    for (day of ["2027-01-11", "2027-01-12", "2027-01-12"]) await request(app).post("/api/watches/refresh").expect(200);
+    const [updated] = (await request(app).get("/api/watches")).body as Watch[];
+    expect(updated.history.map((h) => h.date)).toEqual(["2027-01-10", "2027-01-11", "2027-01-12"]);
+    expect(updated.history.every((h) => h.available && h.amount > 0)).toBe(true);
+    // Mock fares move from day to day.
+    expect(new Set(updated.history.map((h) => h.amount)).size).toBeGreaterThan(1);
+
+    await request(app).delete(`/api/watches/${watch.id}`).expect(204);
+    expect((await request(app).get("/api/watches")).body).toEqual([]);
+  });
+
+  it("refuses to watch something that isn't in the results", async () => {
+    await request(makeApp()).post("/api/watches").send({ category: "hotels", params: searches.hotels, offerId: "nope" }).expect(404);
+  });
+});
+
+describe("scenarios", () => {
+  it("saves scenarios and prunes removed items", async () => {
+    const app = makeApp();
+    const trip = (await request(app).post("/api/trips").send(tripInput)).body as Trip;
+    const offer = (await request(app).post("/api/search/flights").send(searches.flights)).body.offers[0] as Offer;
+    const item = (await request(app).post(`/api/trips/${trip.id}/items`).send(offerToItem(offer, 2))).body;
+    expect(item.points).toHaveLength(2);
+    expect(item.durationMinutes).toBeGreaterThan(0);
+
+    const scenario = {
+      name: "Fly + drive",
+      itemIds: [item.id, "missing"],
+      drives: [{ from: { lat: 35.77, lon: 140.39, label: "NRT" }, to: { lat: 35.67, lon: 139.65, label: "Hotel" }, durationMinutes: 75, distanceKm: 70, source: "osrm", geometry: [] }],
+    };
+    const saved = (await request(app).patch(`/api/trips/${trip.id}`).send({ scenarios: [scenario] }).expect(200)).body as Trip;
+    expect(saved.scenarios[0]).toMatchObject({ name: "Fly + drive", itemIds: [item.id] });
+    expect(saved.scenarios[0].drives[0].id).toBeTruthy();
+
+    await request(app).delete(`/api/trips/${trip.id}/items/${item.id}`).expect(204);
+    const after = (await request(app).get(`/api/trips/${trip.id}`)).body as Trip;
+    expect((after.scenarios as Scenario[])[0].itemIds).toEqual([]);
+
+    await request(app).patch(`/api/trips/${trip.id}`).send({ scenarios: [{ name: "" }] }).expect(400);
   });
 });

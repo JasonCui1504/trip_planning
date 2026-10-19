@@ -1,7 +1,7 @@
 import type { DiningSearch, Offer } from "../../../shared/types.ts";
 import { atMinutes } from "../../dates.ts";
 import { links } from "../links.ts";
-import { resolvePlace } from "./places.ts";
+import { nearCenter, resolvePlace } from "./places.ts";
 import { seededRandom } from "./random.ts";
 
 export const CUISINES = ["Local", "Seafood", "Italian", "Japanese", "Vegetarian", "Steakhouse", "Street food", "Bakery & café", "Fine dining", "Tapas & small plates"];
@@ -45,6 +45,7 @@ export async function searchDining(params: DiningSearch): Promise<Offer[]> {
         "Known for": rng.pick(["Tasting menu", "Seasonal small plates", "Wood-fired grill", "Natural wine list", "Views", "Classic local dishes"]),
       },
       bookingUrl: links.dining(place.city, name),
+      points: [nearCenter(place, seededRandom(`${place.code}-dn-${i}`).next, 4, name)].filter((p) => p !== undefined),
       imageHue: rng.int(0, 359),
     };
   });

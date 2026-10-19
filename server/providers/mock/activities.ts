@@ -1,7 +1,7 @@
 import type { ActivitySearch, Offer } from "../../../shared/types.ts";
 import { atMinutes } from "../../dates.ts";
 import { links } from "../links.ts";
-import { resolvePlace } from "./places.ts";
+import { nearCenter, resolvePlace } from "./places.ts";
 import { seededRandom } from "./random.ts";
 
 export const ACTIVITY_CATEGORIES = ["Tours", "Food & drink", "Culture", "Outdoors", "Nightlife", "Day trips", "Classes"] as const;
@@ -71,6 +71,7 @@ export async function searchActivities(params: ActivitySearch): Promise<Offer[]>
         "Meeting point": `${rng.pick(place.neighborhoods)}, ${place.city}`,
       },
       bookingUrl: links.activities(place.city, title),
+      points: [nearCenter(place, seededRandom(`${place.code}-${i}`).next, 8, title)].filter((p) => p !== undefined),
       imageHue: rng.int(0, 359),
     };
   });

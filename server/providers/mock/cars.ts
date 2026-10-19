@@ -1,7 +1,7 @@
 import type { CarSearch, Offer } from "../../../shared/types.ts";
 import { atMinutes, daysBetween } from "../../dates.ts";
-import { links } from "../links.ts";
-import { resolvePlace } from "./places.ts";
+import { altLinks, links } from "../links.ts";
+import { airportPoint, resolvePlace } from "./places.ts";
 import { seededRandom } from "./random.ts";
 
 const COMPANIES = ["Roadway Rentals", "Velo Cars", "SwiftDrive", "Compass Auto", "Budgetline", "Summit Rent-a-Car"];
@@ -52,6 +52,8 @@ export async function searchCars(params: CarSearch): Promise<Offer[]> {
           Fuel: cls.name === "Electric" ? "Return at 70% charge" : "Full to full",
         },
         bookingUrl: links.cars(place.code, params.pickupDate, params.dropoffDate),
+        altLinks: altLinks.cars(place.code, params.pickupDate, params.dropoffDate),
+        points: [airportPoint(place)].filter((p) => p !== undefined).map((p) => ({ ...p, label: `${company} · ${p.label}` })),
         imageHue: (ci * 51) % 360,
       };
     }),

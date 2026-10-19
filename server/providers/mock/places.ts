@@ -1,15 +1,18 @@
 import type { Place } from "../../../shared/types.ts";
 
 export interface MockPlace extends Place {
+  /** Airport coordinates. */
   lat: number;
   lon: number;
+  /** City-centre coordinates (hotels, activities and restaurants cluster here). */
+  center: [number, number];
   /** Relative cost of living, 1 = average. Scales hotel/food/activity prices. */
   costIndex: number;
   neighborhoods: string[];
   landmarks: string[];
 }
 
-export const PLACES: MockPlace[] = [
+export const PLACES = ([
   { code: "JFK", city: "New York", country: "United States", airport: "John F. Kennedy Intl", lat: 40.64, lon: -73.78, costIndex: 1.5, neighborhoods: ["Midtown", "SoHo", "Lower Manhattan", "Williamsburg", "Upper West Side"], landmarks: ["Central Park", "the Met", "Brooklyn Bridge", "the High Line", "Statue of Liberty"] },
   { code: "LAX", city: "Los Angeles", country: "United States", airport: "Los Angeles Intl", lat: 33.94, lon: -118.41, costIndex: 1.35, neighborhoods: ["Santa Monica", "Hollywood", "Downtown", "Venice", "Silver Lake"], landmarks: ["Griffith Observatory", "the Getty", "Venice Beach", "Hollywood Sign", "Santa Monica Pier"] },
   { code: "SFO", city: "San Francisco", country: "United States", airport: "San Francisco Intl", lat: 37.62, lon: -122.38, costIndex: 1.5, neighborhoods: ["Union Square", "Mission", "North Beach", "Nob Hill", "Hayes Valley"], landmarks: ["Golden Gate Bridge", "Alcatraz", "Fisherman's Wharf", "Golden Gate Park", "Chinatown"] },
@@ -45,7 +48,21 @@ export const PLACES: MockPlace[] = [
   { code: "EZE", city: "Buenos Aires", country: "Argentina", airport: "Ezeiza Intl", lat: -34.82, lon: -58.54, costIndex: 0.6, neighborhoods: ["Palermo", "Recoleta", "San Telmo", "La Boca", "Puerto Madero"], landmarks: ["Recoleta Cemetery", "Caminito", "Teatro Colón", "Plaza de Mayo", "a tango hall"] },
   { code: "LIM", city: "Lima", country: "Peru", airport: "Jorge Chávez Intl", lat: -12.02, lon: -77.11, costIndex: 0.6, neighborhoods: ["Miraflores", "Barranco", "San Isidro", "Centro", "Pueblo Libre"], landmarks: ["the Malecón", "Huaca Pucllana", "Plaza Mayor", "Larco Museum", "Machu Picchu (via Cusco)"] },
   { code: "HNL", city: "Honolulu", country: "United States", airport: "Daniel K. Inouye Intl", lat: 21.32, lon: -157.92, costIndex: 1.45, neighborhoods: ["Waikiki", "Kaka'ako", "Chinatown", "Kailua", "North Shore"], landmarks: ["Diamond Head", "Pearl Harbor", "Hanauma Bay", "the North Shore", "Waikiki Beach"] },
-];
+] as Omit<MockPlace, "center">[]) as MockPlace[];
+
+// City centres, which can be far from the airport (Narita is ~60 km from Tokyo).
+const CENTERS: Record<string, [number, number]> = {
+  JFK: [40.758, -73.9855], LAX: [34.0522, -118.2437], SFO: [37.7749, -122.4194], ORD: [41.8781, -87.6298],
+  MIA: [25.7617, -80.1918], SEA: [47.6062, -122.3321], BOS: [42.3601, -71.0589], DEN: [39.7392, -104.9903],
+  YYZ: [43.6532, -79.3832], YVR: [49.2827, -123.1207], MEX: [19.4326, -99.1332], CUN: [21.1619, -86.8515],
+  LHR: [51.5074, -0.1278], CDG: [48.8566, 2.3522], AMS: [52.3676, 4.9041], FCO: [41.9028, 12.4964],
+  BCN: [41.3874, 2.1686], LIS: [38.7223, -9.1393], BER: [52.52, 13.405], ATH: [37.9838, 23.7275],
+  IST: [41.0082, 28.9784], KEF: [64.1466, -21.9426], DXB: [25.2048, 55.2708], NRT: [35.6762, 139.6503],
+  KIX: [34.6937, 135.5023], ICN: [37.5665, 126.978], BKK: [13.7563, 100.5018], SIN: [1.2903, 103.852],
+  DPS: [-8.5069, 115.2625], SYD: [-33.8688, 151.2093], CPT: [-33.9249, 18.4241], GRU: [-23.5505, -46.6333],
+  EZE: [-34.6037, -58.3816], LIM: [-12.0464, -77.0428], HNL: [21.2793, -157.8292],
+};
+for (const p of PLACES) p.center = CENTERS[p.code] ?? [p.lat, p.lon];
 
 const byCode = new Map(PLACES.map((p) => [p.code, p]));
 
@@ -72,6 +89,7 @@ export function resolvePlace(query: string): MockPlace {
     airport: `${city} Airport`,
     lat: 0,
     lon: 0,
+    center: [0, 0],
     costIndex: 1,
     neighborhoods: ["City Centre", "Old Town", "Riverside", "Arts District", "Harbour"],
     landmarks: ["the old town", "the main square", "the city museum", "the waterfront", "the local market"],
@@ -87,6 +105,19 @@ export function searchPlaces(query: string, limit = 8): MockPlace[] {
       p.city.toLowerCase().includes(q) ||
       p.country.toLowerCase().includes(q),
   ).slice(0, limit);
+}
+
+/** A deterministic spot within `radiusKm` of the city centre. */
+export function nearCenter(place: MockPlace, rand: () => number, radiusKm = 3.5, label?: string) {
+  if (place.lat === 0 && place.lon === 0) return undefined;
+  const r = (radiusKm * Math.sqrt(rand())) / 111;
+  const theta = rand() * 2 * Math.PI;
+  const [lat, lon] = place.center;
+  return { lat: lat + r * Math.cos(theta), lon: lon + (r * Math.sin(theta)) / Math.cos((lat * Math.PI) / 180), label };
+}
+
+export function airportPoint(place: MockPlace) {
+  return place.lat === 0 && place.lon === 0 ? undefined : { lat: place.lat, lon: place.lon, label: `${place.code} · ${place.airport}` };
 }
 
 /** Great-circle distance in km. */

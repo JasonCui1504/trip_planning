@@ -1,19 +1,22 @@
 import { useEffect, useState } from "react";
 
-export type WorkspaceTab = "search" | "itinerary" | "budget" | "checklist";
+export type WorkspaceTab = "search" | "workshop" | "itinerary" | "budget" | "checklist";
 
-export type Route = { page: "home" } | { page: "trip"; id: string; tab: WorkspaceTab };
+export type Route = { page: "home" } | { page: "watch" } | { page: "trip"; id: string; tab: WorkspaceTab };
 
-const TABS: WorkspaceTab[] = ["search", "itinerary", "budget", "checklist"];
+const TABS: WorkspaceTab[] = ["search", "workshop", "itinerary", "budget", "checklist"];
 
 function parse(hash: string): Route {
   const [, page, id, tab] = hash.replace(/^#/, "").split("/");
+  if (page === "watch") return { page: "watch" };
   if (page === "trip" && id) return { page: "trip", id, tab: TABS.includes(tab as WorkspaceTab) ? (tab as WorkspaceTab) : "search" };
   return { page: "home" };
 }
 
 export function href(route: Route): string {
-  return route.page === "home" ? "#/" : `#/trip/${route.id}/${route.tab}`;
+  if (route.page === "home") return "#/";
+  if (route.page === "watch") return "#/watch";
+  return `#/trip/${route.id}/${route.tab}`;
 }
 
 export function navigate(route: Route) {

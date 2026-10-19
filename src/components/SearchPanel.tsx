@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { CATEGORIES, type Category, type Offer, type SearchParamsMap, type SearchResponse, type Trip } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { CATEGORY_LABEL, money } from "../format.ts";
@@ -61,6 +61,20 @@ export function SearchPanel({ trip, state, setState, actions }: { trip: Trip; st
   const [compare, setCompare] = useState<Offer[]>([]);
   const [showCompare, setShowCompare] = useState(false);
   const [booking, setBooking] = useState<Offer | null>(null);
+  const [watched, setWatched] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    api.watches().then((list) => setWatched(new Set(list.map((w) => w.offerId)))).catch(() => undefined);
+  }, []);
+
+  const watch = async (offer: Offer) => {
+    try {
+      await api.watch(category, params, offer.id, trip.id);
+      setWatched((s) => new Set(s).add(offer.id));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   const params = (state.params[category] ?? defaultParams(category, trip)) as SearchParamsMap[typeof category];
   const response = state.results[category];
@@ -164,6 +178,8 @@ export function SearchPanel({ trip, state, setState, actions }: { trip: Trip; st
                 offer={offer}
                 saved={savedByOffer.get(offer.id)}
                 comparing={compare.some((o) => o.id === offer.id)}
+                watching={watched.has(offer.id)}
+                onWatch={() => watch(offer)}
                 onSave={() => actions.saveOffer(offer)}
                 onBook={() => setBooking(offer)}
                 onToggleCompare={() => toggleCompare(offer)}

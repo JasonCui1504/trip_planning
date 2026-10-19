@@ -113,6 +113,16 @@ export function ItemModal({ trip, item, actions, onClose }: { trip: Trip; item: 
             ))}
           </dl>
         )}
+        {item?.altLinks && item.altLinks.length > 0 && (
+          <p className="alt-links small span-2">
+            <span className="muted">Compare on:</span>
+            {item.altLinks.map((l) => (
+              <a key={l.label} href={l.url} target="_blank" rel="noreferrer">
+                {l.label}
+              </a>
+            ))}
+          </p>
+        )}
         {error && <p className="error span-2">{error}</p>}
         <div className="form-actions span-2">
           {item && (
