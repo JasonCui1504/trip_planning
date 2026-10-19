@@ -51,6 +51,34 @@ function score(o: Offer): number {
   return flagged + (o.rating ?? 4) - Math.log10(o.totalPrice.amount + 1) * 0.6;
 }
 
+/** Flight search params plus the form's "Also compare" list (searched in the same go, never sent to the server). */
+type FlightParams = SearchParamsMap["flights"] & { alsoTo?: string };
+
+/**
+ * Search flights to several destinations at once and merge the results, each
+ * tagged with where it goes. Each destination is its own search (and its own
+ * SerpApi credit). A destination that fails is reported without losing the rest.
+ */
+async function searchDestinations(params: FlightParams): Promise<SearchResponse> {
+  const { alsoTo = "", ...base } = params;
+  const destinations = [base.destination, ...alsoTo.split(",").map((d) => d.trim()).filter(Boolean)];
+  const unique = [...new Map(destinations.map((d) => [d.toLowerCase(), d])).values()];
+  if (unique.length === 1) return api.search("flights", base);
+  const results = await Promise.allSettled(unique.map((destination) => api.search("flights", { ...base, destination })));
+  const ok = results.flatMap((r, i) => (r.status === "fulfilled" ? [{ to: unique[i], res: r.value }] : []));
+  const failed = results.flatMap((r, i) => (r.status === "rejected" ? [`${unique[i]}: ${(r.reason as Error).message}`] : []));
+  if (!ok.length) throw new Error(failed.join(" · "));
+  const first = ok[0].res;
+  return {
+    ...first,
+    live: ok.some((r) => r.res.live),
+    offers: ok.flatMap(({ to, res }) => res.offers.map((o) => ({ ...o, tags: [`To ${to}`, ...o.tags] }))),
+    warnings: [...new Set([...ok.flatMap((r) => r.res.warnings), ...failed.map((f) => `Couldn't search ${f}`)])],
+    insights: ok.flatMap(({ to, res }) => res.insights.map((i) => `${to}: ${i}`)),
+    links: ok.flatMap(({ to, res }) => res.links.map((l) => ({ ...l, label: `${l.label} · ${to}` }))),
+  };
+}
+
 export function SearchPanel({ trip, state, setState, actions }: { trip: Trip; state: SearchState; setState: Dispatch<SetStateAction<SearchState>>; actions: TripActions }) {
   const { category } = state;
   const [busy, setBusy] = useState(false);
@@ -69,7 +97,9 @@ export function SearchPanel({ trip, state, setState, actions }: { trip: Trip; st
 
   const watch = async (offer: Offer) => {
     try {
-      await api.watch(category, params, offer.id, trip.id);
+      // A flight from a multi-destination search is watched on its own route.
+      const own = offer.category === "flights" && offer.legs?.[0] ? { ...params, destination: offer.legs[0].to } : params;
+      await api.watch(category, own, offer.id, trip.id);
       setWatched((s) => new Set(s).add(offer.id));
     } catch (e) {
       setError((e as Error).message);
@@ -91,7 +121,7 @@ export function SearchPanel({ trip, state, setState, actions }: { trip: Trip; st
     setError("");
     setState((s) => ({ ...s, params: { ...s.params, [category]: next } }));
     try {
-      const res = await api.search(category, next);
+      const res = category === "flights" ? await searchDestinations(next as FlightParams) : await api.search(category as Category, next);
       setState((s) => ({ ...s, results: { ...s.results, [category]: res } }));
       setTagFilter([]);
     } catch (e) {

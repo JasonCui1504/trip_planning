@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import {
+  applyScenario,
   CATEGORIES,
   type Category,
   type ChecklistItem,
@@ -18,7 +19,7 @@ import { createAuth, type Auth } from "./auth.ts";
 import type { EditCatalog } from "./edit.ts";
 import type { Maps } from "./maps.ts";
 import { ProviderInputError } from "./providers/serpapi.ts";
-import type { Registry } from "./providers/index.ts";
+import { ProviderError, type Registry } from "./providers/index.ts";
 import { checkWatch, localToday, refreshWatches } from "./watch.ts";
 import { searchPlaces } from "./places.ts";
 import { exportTrip, TravelBudgetError, type TravelBudgetOptions } from "./travelBudget.ts";
@@ -59,6 +60,21 @@ const isPoint = (p: unknown): p is GeoPoint =>
   typeof p === "object" && p !== null && Number.isFinite((p as GeoPoint).lat) && Number.isFinite((p as GeoPoint).lon) &&
   Math.abs((p as GeoPoint).lat) <= 90 && Math.abs((p as GeoPoint).lon) <= 180;
 
+const DATETIME = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/;
+
+/** A scenario's own schedule: kept only for items still on the trip, with well-formed times. */
+function validateTimes(value: unknown, itemIds: Set<string>): Scenario["times"] {
+  if (typeof value !== "object" || value === null) return {};
+  const out: NonNullable<Scenario["times"]> = {};
+  for (const [id, t] of Object.entries(value as Record<string, { start?: unknown; end?: unknown }>)) {
+    if (!itemIds.has(id) || typeof t !== "object" || t === null) continue;
+    const start = typeof t.start === "string" && DATETIME.test(t.start) ? t.start : undefined;
+    const end = typeof t.end === "string" && DATETIME.test(t.end) ? t.end : undefined;
+    if (start || end) out[id] = { ...(start && { start }), ...(end && { end }) };
+  }
+  return out;
+}
+
 function validateScenarios(value: unknown, trip: Trip): Scenario[] {
   if (!Array.isArray(value)) throw new ValidationError(`"scenarios" must be a list`);
   const itemIds = new Set(trip.items.map((i) => i.id));
@@ -83,6 +99,7 @@ function validateScenarios(value: unknown, trip: Trip): Scenario[] {
       itemIds: (Array.isArray(raw.itemIds) ? raw.itemIds : []).filter((id): id is string => typeof id === "string" && itemIds.has(id)),
       drives,
       notes: typeof raw.notes === "string" ? raw.notes : "",
+      times: validateTimes(raw.times, itemIds),
       createdAt: typeof raw.createdAt === "string" ? raw.createdAt : now(),
     };
   });
@@ -280,13 +297,16 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
     const username = typeof body.username === "string" && body.username.trim() ? body.username.trim() : travelBudget.username;
     const password = typeof body.password === "string" && body.password ? body.password : travelBudget.password;
     if (!username || !password) throw new ValidationError("Enter your travel budget username and password");
+    // Export one Workshop plan (its pieces and its schedule) instead of everything saved.
+    const scenario = typeof body.scenarioId === "string" && body.scenarioId ? trip.scenarios.find((s) => s.id === body.scenarioId) : undefined;
+    if (body.scenarioId && !scenario) throw new NotFound("That plan no longer exists");
     try {
-      const link = await exportTrip(trip, { ...travelBudget, username, password });
+      const link = await exportTrip(scenario ? { ...applyScenario(trip, scenario), name: `${trip.name} · ${scenario.name}` } : trip, { ...travelBudget, username, password });
       res.json(await touch({ ...trip, travelBudget: link }));
     } catch (err) {
-      if (!(err instanceof TravelBudgetError)) throw err;
-      if (err.partial) await touch({ ...trip, travelBudget: err.partial });
-      res.status(502).json({ error: err.message });
+      if (err instanceof TravelBudgetError && err.partial) await touch({ ...trip, travelBudget: err.partial });
+      // Network failures and timeouts too: say what went wrong rather than a bare 500.
+      res.status(502).json({ error: err instanceof TravelBudgetError ? err.message : `Couldn't reach the travel budget: ${(err as Error).message}` });
     }
   });
 
@@ -390,6 +410,7 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof ValidationError || err instanceof ProviderInputError) return void res.status(400).json({ error: err.message });
+    if (err instanceof ProviderError) return void res.status(502).json({ error: err.message });
     if (err instanceof NotFound) return void res.status(404).json({ error: err.message });
     if (err instanceof SyntaxError) return void res.status(400).json({ error: "Invalid JSON body" });
     console.error(err);

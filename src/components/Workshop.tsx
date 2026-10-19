@@ -3,7 +3,8 @@ import type { Category, DriveLeg, Scenario, Trip, TripItem } from "../../shared/
 import { api } from "../api.ts";
 import { CATEGORY_LABEL, duration, money, shortDate, time } from "../format.ts";
 import { CATEGORY_ICON, Icon } from "../icons.tsx";
-import { driveFromRoute, FUEL_PER_KM, newScenario, scenarioTotals, suggestDrives, type ScenarioTotals } from "../scenario.ts";
+import { datesOf, destinationOf, driveFromRoute, FUEL_PER_KM, newScenario, scenarioTotals, suggestDrives, variantsOf, type ScenarioTotals } from "../scenario.ts";
+import { ScenarioSchedule } from "./ScenarioSchedule.tsx";
 import { greatCircle, MapView, type MapLine, type MapMarker } from "./MapView.tsx";
 import { PointPicker, type NamedPoint } from "./PointPicker.tsx";
 import type { TripActions } from "./Workspace.tsx";
@@ -31,6 +32,10 @@ export function Workshop({ trip, actions }: { trip: Trip; actions: TripActions }
   const add = (scenario: Scenario) => {
     setSelectedId(scenario.id);
     return save([...scenarios, scenario]);
+  };
+  const addMany = (list: Scenario[]) => {
+    if (list[0]) setSelectedId(list[0].id);
+    return save([...scenarios, ...list]);
   };
 
   const cheapest = minBy(scenarios, (s) => totals.get(s.id)!.cost);
@@ -74,6 +79,7 @@ export function Workshop({ trip, actions }: { trip: Trip; actions: TripActions }
                 </span>
               </span>
               <span className="scenario-cost">{money(t.cost, trip.currency)}</span>
+              {destinationOf(t.items) && <span className="small">→ {destinationOf(t.items)}</span>}
               <span className="muted small">
                 {t.travelMinutes ? `${duration(t.travelMinutes)} travelling` : "No travel time yet"} · {t.items.length} pieces · {s.drives.length} drives
               </span>
@@ -90,6 +96,16 @@ export function Workshop({ trip, actions }: { trip: Trip; actions: TripActions }
           >
             Duplicate
           </button>
+          {trip.items.filter((i) => i.category === "flights").length > 1 && (
+            <button className="btn btn-ghost" title="Copies this plan once per saved flight, to compare flights and destinations side by side" onClick={() => addMany(variantsOf(selected, trip, "flights"))}>
+              A plan per flight
+            </button>
+          )}
+          {trip.items.filter((i) => i.category === "hotels").length > 1 && (
+            <button className="btn btn-ghost" title="Copies this plan once per saved stay" onClick={() => addMany(variantsOf(selected, trip, "hotels"))}>
+              A plan per stay
+            </button>
+          )}
         </div>
       </div>
 
@@ -99,6 +115,8 @@ export function Workshop({ trip, actions }: { trip: Trip; actions: TripActions }
         <ScenarioEditor key={selected.id} trip={trip} scenario={selected} totals={totals.get(selected.id)!} update={update} onDelete={() => save(scenarios.filter((s) => s.id !== selected.id))} />
         <ScenarioMap scenario={selected} totals={totals.get(selected.id)!} trip={trip} />
       </div>
+
+      <ScenarioSchedule key={`schedule-${selected.id}`} trip={trip} scenario={selected} update={update} />
     </div>
   );
 }
@@ -144,6 +162,19 @@ function CompareTable({ scenarios, totals, trip }: { scenarios: Scenario[]; tota
           </tr>
         </thead>
         <tbody>
+          <tr>
+            <th>Goes to</th>
+            {scenarios.map((s) => (
+              <td key={s.id}>{destinationOf(totals.get(s.id)!.items) || "—"}</td>
+            ))}
+          </tr>
+          <tr>
+            <th>Dates</th>
+            {scenarios.map((s) => {
+              const d = datesOf(totals.get(s.id)!.items);
+              return <td key={s.id}>{d ? (d.from === d.to ? shortDate(d.from) : `${shortDate(d.from)} – ${shortDate(d.to)}`) : "—"}</td>;
+            })}
+          </tr>
           {rows.map((row) => {
             const values = scenarios.map((s) => row.value(totals.get(s.id)!));
             const best = row.lowerIsBetter ? Math.min(...values.filter((v) => v > 0)) : NaN;

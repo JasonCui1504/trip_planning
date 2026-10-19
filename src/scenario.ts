@@ -1,4 +1,4 @@
-import type { DriveLeg, GeoPoint, Scenario, Trip, TripItem } from "../shared/types.ts";
+import { applyScenario, type DriveLeg, type GeoPoint, type Scenario, type Trip, type TripItem } from "../shared/types.ts";
 
 /** Rough fuel cost for a typical rental car (≈7.5 L/100 km at ≈$1.60/L). */
 export const FUEL_PER_KM = 0.12;
@@ -15,7 +15,8 @@ export interface ScenarioTotals {
 }
 
 export function scenarioTotals(scenario: Scenario, trip: Trip): ScenarioTotals {
-  const items = scenario.itemIds.map((id) => trip.items.find((i) => i.id === id)).filter((i): i is TripItem => Boolean(i));
+  // With the plan's own schedule applied, so its drives and dates follow it.
+  const { items } = applyScenario(trip, scenario);
   const itemCost = items.reduce((s, i) => s + i.cost.amount, 0);
   const driveKm = scenario.drives.reduce((s, d) => s + d.distanceKm, 0);
   const driveMinutes = scenario.drives.reduce((s, d) => s + d.durationMinutes, 0);
@@ -74,4 +75,36 @@ export function newScenario(name: string): Scenario {
 
 export function driveFromRoute(from: DriveLeg["from"], to: DriveLeg["to"], route: Pick<DriveLeg, "durationMinutes" | "distanceKm" | "source" | "geometry">): DriveLeg {
   return { id: crypto.randomUUID(), from, to, ...route };
+}
+
+/** Where a plan goes: the arrival airport of its first flight, else its first stay's area. */
+export function destinationOf(items: TripItem[]): string {
+  const flight = items.find((i) => i.category === "flights" && i.location?.includes("→"));
+  if (flight) return flight.location!.split("→").pop()!.trim();
+  return items.find((i) => i.category === "hotels")?.location ?? "";
+}
+
+/** First and last day the plan's pieces touch, as YYYY-MM-DD. */
+export function datesOf(items: TripItem[]): { from: string; to: string } | null {
+  const days = items.flatMap((i) => [i.start, i.end, ...(i.moments ?? []).map((m) => m.at)]).filter((d): d is string => Boolean(d)).map((d) => d.slice(0, 10)).sort();
+  return days.length ? { from: days[0], to: days[days.length - 1] } : null;
+}
+
+/**
+ * Copies of a plan, one per saved option of a category, each with that option
+ * swapped in, e.g. one plan per flight to compare destinations side by side.
+ */
+export function variantsOf(scenario: Scenario, trip: Trip, category: "flights" | "hotels"): Scenario[] {
+  const options = trip.items.filter((i) => i.category === category);
+  const others = scenario.itemIds.filter((id) => trip.items.find((i) => i.id === id)?.category !== category);
+  return options.map((option) => ({
+    ...scenario,
+    id: crypto.randomUUID(),
+    name: `${scenario.name} · ${option.title.length > 28 ? `${option.title.slice(0, 27)}…` : option.title}`,
+    itemIds: [...others, option.id],
+    // A different flight usually means a different arrival airport, so its drives start over.
+    drives: category === "flights" ? [] : scenario.drives.map((d) => ({ ...d, id: crypto.randomUUID() })),
+    times: { ...scenario.times },
+    createdAt: new Date().toISOString(),
+  }));
 }

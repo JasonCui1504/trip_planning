@@ -12,6 +12,7 @@ import { editPage } from "./fixtures/edit.ts";
 import { googleFlights } from "./fixtures/serpapi.ts";
 import { hotelsComHotelRegions, hotelsComRegions, hotelsComSearch } from "./fixtures/hotelscom.ts";
 import { buildPlan } from "../server/travelBudget.ts";
+import { destinationOf, variantsOf } from "../src/scenario.ts";
 import { createRegistry } from "../server/providers/index.ts";
 import type { Scenario, Watch } from "../shared/types.ts";
 
@@ -214,6 +215,42 @@ describe("scenarios", () => {
   });
 });
 
+describe("workshop plans", () => {
+  it("keeps each plan's own schedule, dropping bad or stale entries", async () => {
+    const app = makeApp();
+    const trip = (await request(app).post("/api/trips").send(tripInput)).body as Trip;
+    const dinner = (await request(app).post(`/api/trips/${trip.id}/items`).send({ category: "dining", title: "Sushi", start: "2027-04-02T19:00" })).body as TripItem;
+    const scenarios = [
+      { name: "Plan A", itemIds: [dinner.id], drives: [] },
+      { name: "Plan B", itemIds: [dinner.id], drives: [], times: { [dinner.id]: { start: "2027-04-05T20:00", end: "soon" }, ghost: { start: "2027-04-01T10:00" } } },
+    ];
+    const saved = (await request(app).patch(`/api/trips/${trip.id}`).send({ scenarios }).expect(200)).body as Trip;
+    expect(saved.scenarios[0].times).toEqual({});
+    expect(saved.scenarios[1].times).toEqual({ [dinner.id]: { start: "2027-04-05T20:00" } });
+    // The saved item itself doesn't move.
+    expect(saved.items[0].start).toBe("2027-04-02T19:00");
+  });
+
+  it("makes one plan per flight and names where each goes", () => {
+    const flight = (id: string, to: string) => ({ id, category: "flights", title: `Fly to ${to}`, location: `SFO → ${to}` }) as TripItem;
+    const hotel = { id: "h", category: "hotels", title: "Hotel", location: "Shinjuku, Tokyo" } as TripItem;
+    const t = { items: [flight("f1", "NRT"), flight("f2", "KIX"), hotel] } as Trip;
+    const base = { id: "a", name: "Plan A", itemIds: ["f1", "h"], drives: [], notes: "", createdAt: "" };
+    const variants = variantsOf(base, t, "flights");
+    expect(variants.map((v) => v.itemIds)).toEqual([["h", "f1"], ["h", "f2"]]);
+    expect(variants.map((v) => destinationOf(v.itemIds.map((id) => t.items.find((i) => i.id === id)!)))).toEqual(["NRT", "KIX"]);
+    expect(destinationOf([hotel])).toBe("Shinjuku, Tokyo");
+  });
+
+  it("shows why a live search failed instead of a bare error", async () => {
+    const failing = (async () => new Response(JSON.stringify({ error: "Invalid API key." }), { status: 401 })) as unknown as typeof fetch;
+    const edit = fakeEdit();
+    const app = createApp({ store: new TripStore(null), registry: createRegistry({ ...noKeys, SERPAPI_API_KEY: "bad" }, { fetch: failing, edit }), maps: createMaps({ offline: true }), edit });
+    const res = await request(app).post("/api/search/flights").send(searches.flights).expect(502);
+    expect(res.body.error).toBe("Google Flights (SerpApi) search failed: SerpApi: Invalid API key.");
+  });
+});
+
 describe("live providers (SerpApi flights, Hotels.com stays)", () => {
   it("maps Google Flights results and price insights", async () => {
     const { app, calls } = makeLiveApp();
@@ -409,6 +446,19 @@ describe("export to the travel budget", () => {
     const third = (await request(app).post(`/api/trips/${created.id}/export/travel-budget`).send({ username: "jason", password: "pw" }).expect(200)).body as Trip;
     expect(third.travelBudget!.tripId).not.toBe(first.travelBudget!.tripId);
     expect(db.trips.size).toBe(1);
+  });
+
+  it("exports one Workshop plan with its own schedule", async () => {
+    const { db, fetchImpl } = fakeTravelBudget();
+    const app = makeExportApp(fetchImpl, { username: "jason", password: "pw" });
+    const t = (await request(app).post("/api/trips").send(tripInput)).body as Trip;
+    const a = (await request(app).post(`/api/trips/${t.id}/items`).send({ category: "activities", title: "teamLab", start: "2027-04-03T10:00" })).body as TripItem;
+    await request(app).post(`/api/trips/${t.id}/items`).send({ category: "activities", title: "Not in this plan", start: "2027-04-04T10:00" });
+    const withPlan = (await request(app).patch(`/api/trips/${t.id}`).send({ scenarios: [{ name: "Plan B", itemIds: [a.id], drives: [], times: { [a.id]: { start: "2027-04-06T14:00" } } }] })).body as Trip;
+    await request(app).post(`/api/trips/${t.id}/export/travel-budget`).send({ scenarioId: withPlan.scenarios[0].id }).expect(200);
+    expect([...db.trips.values()][0]).toMatchObject({ name: "Tokyo spring · Plan B" });
+    expect([...db.events.values()]).toEqual([expect.objectContaining({ title: "teamLab", date: "2027-04-06", start_hour: 14 })]);
+    await request(app).post(`/api/trips/${t.id}/export/travel-budget`).send({ scenarioId: "gone" }).expect(404);
   });
 
   it("uses a login saved on the server and reports a bad one", async () => {

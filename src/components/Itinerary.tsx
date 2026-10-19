@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Trip, TripItem } from "../../shared/types.ts";
+import { applyScenario, type Trip, type TripItem } from "../../shared/types.ts";
 import { addDays, dayLabel, daysBetween, money, time } from "../format.ts";
 import { CATEGORY_ICON, Icon } from "../icons.tsx";
 import { ItemRow } from "./TripBoard.tsx";
@@ -14,8 +14,12 @@ interface Entry {
 const END_LABEL: Partial<Record<TripItem["category"], string>> = { hotels: "Check out", cars: "Drop off" };
 const START_LABEL: Partial<Record<TripItem["category"], string>> = { hotels: "Check in", cars: "Pick up" };
 
-export function Itinerary({ trip, actions }: { trip: Trip; actions: TripActions }) {
+export function Itinerary({ trip: fullTrip, actions }: { trip: Trip; actions: TripActions }) {
   const [bookedOnly, setBookedOnly] = useState(false);
+  // "" = everything saved; otherwise one Workshop plan, with its own schedule.
+  const [planId, setPlanId] = useState("");
+  const plan = fullTrip.scenarios.find((s) => s.id === planId);
+  const trip = plan ? applyScenario(fullTrip, plan) : fullTrip;
   const items = trip.items.filter((i) => !bookedOnly || i.status === "booked");
   const days = Array.from({ length: daysBetween(trip.startDate, trip.endDate) + 1 }, (_, i) => addDays(trip.startDate, i));
 
@@ -42,6 +46,16 @@ export function Itinerary({ trip, actions }: { trip: Trip; actions: TripActions 
         <span className="muted small">
           {days.length} days · {entries.length} scheduled · {unscheduled.length} unscheduled
         </span>
+        {fullTrip.scenarios.length > 0 && (
+          <select value={planId} onChange={(e) => setPlanId(e.target.value)} aria-label="Which plan">
+            <option value="">Everything saved</option>
+            {fullTrip.scenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        )}
         <label className="inline">
           <input type="checkbox" checked={bookedOnly} onChange={(e) => setBookedOnly(e.target.checked)} /> Booked only
         </label>

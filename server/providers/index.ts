@@ -4,7 +4,7 @@ import type { KeyName } from "../config.ts";
 import { CATEGORIES } from "../../shared/types.ts";
 import { searchLinks } from "./links.ts";
 import { hotelsComHotels } from "./hotelscom.ts";
-import { serpapiFlights } from "./serpapi.ts";
+import { ProviderInputError, serpapiFlights } from "./serpapi.ts";
 
 /**
  * A search provider for one category. To connect a real API, write a module
@@ -39,6 +39,9 @@ export interface SearchProvider<C extends Category> {
 type LiveProviderMap = { [C in Category]: SearchProvider<C>[] };
 
 export const NOT_CONNECTED = "Not connected";
+
+/** A live provider failed (bad key, quota used up, service down); the message says which and why. */
+export class ProviderError extends Error {}
 
 // Real integrations, in order of preference. Each is used only once all of
 // its requiredKeys are set; otherwise the category has no data source.
@@ -77,7 +80,13 @@ export function createRegistry(keys: Record<KeyName, string>, { live = liveProvi
     const links = searchLinks(category, params);
     const provider = providerFor(category);
     if (!provider) return { provider: NOT_CONNECTED, live: false, offers: [] as Offer[], insights: [] as string[], links };
-    const raw = await provider.search(params, ctx, { keys, fetch: fetchImpl });
+    let raw: Offer[] | ProviderResult;
+    try {
+      raw = await provider.search(params, ctx, { keys, fetch: fetchImpl });
+    } catch (err) {
+      if (err instanceof ProviderInputError) throw err;
+      throw new ProviderError(`${provider.name} search failed: ${(err as Error).message}`);
+    }
     const result: ProviderResult = Array.isArray(raw) ? { offers: raw } : raw;
     if (category === "hotels" && edit) {
       const location = (params as SearchParamsMap["hotels"]).location;
