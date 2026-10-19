@@ -358,7 +358,7 @@ export function offerToItem(offer: Offer, travelers: number, status: ItemStatus 
 // ---------- Price grids (the Prices dashboard) ----------
 
 /**
- * A set of searches compared side by side and re-checked over time: every
+ * A set of searches compared side by side and re-checked whenever you press Check: every
  * origin × destination × departure date for flights, or every location × stay
  * for hotels. Each combination is one cell.
  */
@@ -378,8 +378,6 @@ export interface PriceGrid {
   travelers: number;
   rooms: number;
   cabin: FlightSearch["cabin"];
-  /** Re-check automatically every this many days; 0 = only when you press Check. */
-  trackEveryDays: number;
   cells: Record<string, GridCell>;
   createdAt: string;
 }
@@ -397,6 +395,12 @@ export interface GridOption {
   durationMinutes?: number;
   stops?: number;
   edit?: EditInfo;
+  /** Kept so the option can be saved to a trip with its times and map points. */
+  start?: string;
+  end?: string;
+  location?: string;
+  points?: GeoPoint[];
+  provider?: string;
 }
 
 export interface GridPoint {

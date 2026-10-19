@@ -7,8 +7,6 @@ import { href, navigate } from "../router.ts";
 import { GridView } from "./GridView.tsx";
 import { Modal } from "./Modal.tsx";
 
-export const TRACK_LABEL: Record<number, string> = { 0: "Only when I press Check", 1: "Every day", 2: "Every 2 days", 3: "Every 3 days", 7: "Every week" };
-
 /** Cheapest price anywhere in the grid right now, and where. */
 export function bestCell(grid: PriceGrid) {
   let best: { key: string; low: number } | null = null;
@@ -41,7 +39,7 @@ function GridList() {
         <h1>Compare and track prices</h1>
         <p className="muted">
           Set up a grid once, e.g. BWI and DCA to SFO and SJC across a few dates, or three neighbourhoods across two weekends, and see every combination's
-          cheapest price in one table. Check it whenever you like, or let it re-check on a schedule and watch the prices move.
+          cheapest price in one table. Press Check whenever you're planning; check again a few days later and each cell shows how its price moved.
         </p>
         <div className="form-actions start">
           <button className="btn btn-primary" onClick={() => setCreating("flights")}>
@@ -68,7 +66,7 @@ function GridList() {
                 {g.kind === "flights" ? `${g.origins.join(", ")} → ${g.destinations.join(", ")}` : g.destinations.join(" · ")}
               </span>
               <span className="muted small">
-                {g.dates.length} date{g.dates.length === 1 ? "" : "s"} · {cells} searches per check · {TRACK_LABEL[g.trackEveryDays]}
+                {g.dates.length} date{g.dates.length === 1 ? "" : "s"} · {cells} searches per check
               </span>
               {best && <span className="grid-card-best">From {money(best.low)}</span>}
             </a>
@@ -136,7 +134,6 @@ export function GridForm({ kind, initial, onSubmit, onCancel }: { kind: PriceGri
   const [travelers, setTravelers] = useState(initial?.travelers ?? (flights ? 1 : 2));
   const [rooms, setRooms] = useState(initial?.rooms ?? 1);
   const [cabin, setCabin] = useState<PriceGrid["cabin"]>(initial?.cabin ?? "economy");
-  const [trackEveryDays, setTrack] = useState(initial?.trackEveryDays ?? 0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -150,7 +147,7 @@ export function GridForm({ kind, initial, onSubmit, onCancel }: { kind: PriceGri
     setBusy(true);
     setError("");
     try {
-      await onSubmit({ kind, name, origins: originList, destinations: destList, dates, nights, travelers, rooms, cabin, trackEveryDays });
+      await onSubmit({ kind, name, origins: originList, destinations: destList, dates, nights, travelers, rooms, cabin });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -225,20 +222,9 @@ export function GridForm({ kind, initial, onSubmit, onCancel }: { kind: PriceGri
           </label>
         </>
       )}
-      <label>
-        Re-check prices
-        <select value={trackEveryDays} onChange={(e) => setTrack(Number(e.target.value))}>
-          {Object.entries(TRACK_LABEL).map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </label>
       <p className={`small span-2 ${searches > 40 ? "error" : "muted"}`}>
         {searches} search{searches === 1 ? "" : "es"} per check
         {flights ? " (SerpApi: 250 free a month)" : " (Hotels.com via RapidAPI: about 1–2 requests each)"}
-        {trackEveryDays > 0 && searches > 0 && ` · about ${Math.round((searches * 30) / trackEveryDays)} a month when tracked ${TRACK_LABEL[trackEveryDays].toLowerCase()}`}
         {searches > 40 && " · keep it to 40 or fewer"}
       </p>
       {error && <p className="error span-2">{error}</p>}

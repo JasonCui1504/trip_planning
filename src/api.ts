@@ -40,6 +40,7 @@ export const api = {
   logout: () => request<{ ok: true }>("POST", "/api/logout"),
 
   providers: () => request<ProviderStatus[]>("GET", "/api/providers"),
+  checkConnections: () => request<ConnectionStatus[]>("GET", "/api/providers/check"),
   places: (q: string) => request<Place[]>("GET", `/api/places?q=${encodeURIComponent(q)}`),
   search: <C extends Category>(category: C, params: SearchParamsMap[C]) =>
     request<SearchResponse>("POST", `/api/search/${category}`, params),
@@ -79,3 +80,9 @@ export const api = {
 };
 
 export type { Offer };
+export interface ConnectionStatus {
+  name: string;
+  configured: boolean;
+  ok: boolean;
+  detail: string;
+}

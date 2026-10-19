@@ -112,7 +112,7 @@ export function Workshop({ trip, actions }: { trip: Trip; actions: TripActions }
       {scenarios.length > 1 && <CompareTable scenarios={scenarios} totals={totals} trip={trip} />}
 
       <div className="workshop-grid">
-        <ScenarioEditor key={selected.id} trip={trip} scenario={selected} totals={totals.get(selected.id)!} update={update} onDelete={() => save(scenarios.filter((s) => s.id !== selected.id))} />
+        <ScenarioEditor key={selected.id} trip={trip} scenario={selected} totals={totals.get(selected.id)!} update={update} onDelete={() => save(scenarios.filter((s) => s.id !== selected.id))} onExport={() => actions.exportPlan(selected.id)} />
         <ScenarioMap scenario={selected} totals={totals.get(selected.id)!} trip={trip} />
       </div>
 
@@ -195,7 +195,7 @@ function CompareTable({ scenarios, totals, trip }: { scenarios: Scenario[]; tota
   );
 }
 
-function ScenarioEditor({ trip, scenario, totals, update, onDelete }: { trip: Trip; scenario: Scenario; totals: ScenarioTotals; update: (p: Partial<Scenario>) => Promise<void> | undefined; onDelete: () => void }) {
+function ScenarioEditor({ trip, scenario, totals, update, onDelete, onExport }: { trip: Trip; scenario: Scenario; totals: ScenarioTotals; update: (p: Partial<Scenario>) => Promise<void> | undefined; onDelete: () => void; onExport: () => void }) {
   const [name, setName] = useState(scenario.name);
   const [from, setFrom] = useState<NamedPoint | null>(null);
   const [to, setTo] = useState<NamedPoint | null>(null);
@@ -254,6 +254,9 @@ function ScenarioEditor({ trip, scenario, totals, update, onDelete }: { trip: Tr
           onChange={(e) => setName(e.target.value)}
           onBlur={() => name.trim() && name !== scenario.name && update({ name: name.trim() })}
         />
+        <button className="btn btn-secondary btn-sm" onClick={onExport} title="Send this plan, with its own schedule, to your travel budget at jascui.com">
+          <Icon name="external" size={14} /> Export this plan
+        </button>
         <button className="icon-btn" aria-label="Delete scenario" title="Delete scenario" onClick={() => confirm(`Delete "${scenario.name}"?`) && onDelete()}>
           <Icon name="trash" size={16} />
         </button>

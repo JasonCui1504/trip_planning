@@ -10,9 +10,6 @@ export const config = {
   /** Set to require a password (needed when the app is on the internet). */
   appPassword: env("APP_PASSWORD"),
   sessionSecret: env("SESSION_SECRET"),
-  cronSecret: env("CRON_SECRET"),
-  /** How often the price watcher wakes up to check for stale watches. */
-  watchIntervalMinutes: Number(env("WATCH_INTERVAL_MINUTES") || 60),
   /** jascui.com's travel budget, where trips can be exported. */
   travelBudget: {
     url: env("TRAVEL_BUDGET_URL") || "https://www.jascui.com",

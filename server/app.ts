@@ -23,7 +23,9 @@ import { ProviderInputError } from "./providers/serpapi.ts";
 import { ProviderError, type Registry } from "./providers/index.ts";
 import { checkWatch, localToday, refreshWatches } from "./watch.ts";
 import { searchPlaces } from "./places.ts";
-import { checkCell, refreshGrids, validateGrid } from "./grids.ts";
+import { config, type KeyName } from "./config.ts";
+import { checkCell, validateGrid } from "./grids.ts";
+import { checkConnections } from "./providers/check.ts";
 import { exportTrip, TravelBudgetError, type TravelBudgetOptions } from "./travelBudget.ts";
 import { searchValidators, validateTripInput, ValidationError } from "./validate.ts";
 
@@ -50,12 +52,13 @@ export interface AppDeps {
   edit: EditCatalog;
   /** Password login; omitted = open (local use). */
   auth?: Auth;
-  /** Shared secret the scheduler sends to /api/cron/watch (Vercel sets this up from CRON_SECRET). */
-  cronSecret?: string;
   /** Injectable clock so tests can simulate several days of price checks. */
   today?: () => string;
   /** The jascui.com travel budget that trips export to; a saved login is optional. */
   travelBudget?: TravelBudgetOptions;
+  /** API keys and the fetch used to test them (Setup → Check connections). */
+  keys?: Record<KeyName, string>;
+  providerFetch?: typeof fetch;
 }
 
 const isPoint = (p: unknown): p is GeoPoint =>
@@ -107,7 +110,7 @@ function validateScenarios(value: unknown, trip: Trip): Scenario[] {
   });
 }
 
-export function createApp({ store, registry, maps, edit, auth = createAuth({}), cronSecret, today = localToday, travelBudget = { url: "https://www.jascui.com" } }: AppDeps) {
+export function createApp({ store, registry, maps, edit, auth = createAuth({}), today = localToday, travelBudget = { url: "https://www.jascui.com" }, keys = config.keys, providerFetch = fetch }: AppDeps) {
   const app = express();
   // Behind Vercel's proxy: trust X-Forwarded-* for the client IP and https.
   app.set("trust proxy", true);
@@ -122,15 +125,6 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
   app.post("/api/login", auth.login);
   app.post("/api/logout", auth.logout);
 
-  // Called once a day by Vercel Cron (or any scheduler) to re-price watches.
-  app.get("/api/cron/watch", async (req, res) => {
-    const authorized = cronSecret ? req.headers.authorization === `Bearer ${cronSecret}` : !auth.enabled;
-    if (!authorized) return void res.status(401).json({ error: "Unauthorized" });
-    const watches = await refreshWatches(store, registry, today());
-    const cells = await refreshGrids(store, registry, today());
-    res.json({ checked: watches.length, cells, date: today() });
-  });
-
   // Everything else needs a session when a password is set.
   app.use("/api", auth.require);
 
@@ -143,6 +137,11 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
 
   app.get("/api/providers", (_req, res) => {
     res.json(registry.status());
+  });
+
+  // Tests the API keys for real (Setup page). SerpApi's check is free; Hotels.com's uses 1 request.
+  app.get("/api/providers/check", async (_req, res) => {
+    res.json(await checkConnections(keys, providerFetch));
   });
 
   app.get("/api/places", (req, res) => {

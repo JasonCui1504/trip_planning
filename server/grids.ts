@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { gridCells, type GridCell, type GridCellSpec, type GridOption, type Offer, type PriceGrid } from "../shared/types.ts";
 import { isValidDate } from "./dates.ts";
-import type { Store } from "./db.ts";
 import type { Registry } from "./providers/index.ts";
 import { ValidationError } from "./validate.ts";
 
 /**
  * The Prices dashboard: grids of searches (routes × dates, or hotel areas ×
- * dates) whose cheapest prices are recorded each time they're checked.
- * Every cell is one live search, so grids are capped to protect free quotas.
+ * dates) whose cheapest prices are recorded each time you press Check, so
+ * checking again a few days later shows how they moved. Nothing runs on a
+ * schedule. Every cell is one live search, so grids are capped to protect
+ * free quotas.
  */
 
 export const MAX_CELLS = 40;
 const CABINS = ["economy", "premium", "business", "first"] as const;
-const TRACK_EVERY = [0, 1, 2, 3, 7];
 const OPTIONS_KEPT = 6;
 
 const list = (value: unknown, label: string, max: number, transform = (s: string) => s): string[] => {
@@ -40,8 +40,6 @@ export function validateGrid(body: Record<string, unknown>, existing?: PriceGrid
   if (!CABINS.includes(cabin)) throw new ValidationError(`"cabin" must be one of ${CABINS.join(", ")}`);
   const dates = list(pick("dates"), "date", 10).sort();
   if (!dates.every((d) => isValidDate(d))) throw new ValidationError("Dates must look like 2027-04-01");
-  const trackEveryDays = Number(pick("trackEveryDays") ?? 0);
-  if (!TRACK_EVERY.includes(trackEveryDays)) throw new ValidationError(`"trackEveryDays" must be one of ${TRACK_EVERY.join(", ")}`);
 
   const grid: PriceGrid = {
     id: existing?.id ?? randomUUID(),
@@ -54,7 +52,6 @@ export function validateGrid(body: Record<string, unknown>, existing?: PriceGrid
     travelers: int(pick("travelers"), flights ? 1 : 2, 1, 9, flights ? "Adults" : "Guests"),
     rooms: int(pick("rooms"), 1, 1, 8, "Rooms"),
     cabin,
-    trackEveryDays,
     cells: {},
     createdAt: existing?.createdAt ?? new Date().toISOString(),
   };
@@ -77,6 +74,11 @@ function toOption(o: Offer): GridOption {
     durationMinutes: o.durationMinutes,
     stops: o.legs?.[0]?.stops,
     edit: o.edit,
+    start: o.start,
+    end: o.end,
+    location: o.location,
+    points: o.points,
+    provider: o.provider,
   };
 }
 
@@ -116,33 +118,4 @@ export async function checkCell(grid: PriceGrid, spec: GridCellSpec, registry: R
   } catch (err) {
     return { ...prev, error: (err as Error).message, checkedAt };
   }
-}
-
-/** Cells due a check: tracked grids, not checked within their interval, dates still ahead. */
-export function dueCells(grid: PriceGrid, today: string): GridCellSpec[] {
-  if (!grid.trackEveryDays) return [];
-  const cutoff = new Date(`${today}T00:00:00Z`);
-  cutoff.setUTCDate(cutoff.getUTCDate() - grid.trackEveryDays);
-  const since = cutoff.toISOString().slice(0, 10);
-  return gridCells(grid).filter((s) => s.date >= today && (grid.cells[s.key]?.history.at(-1)?.date ?? "") <= since);
-}
-
-/**
- * Check due cells of every tracked grid, one search at a time, until the time
- * budget runs out (a hosted function has a time limit). Anything left over is
- * picked up by the next run.
- */
-export async function refreshGrids(store: Store, registry: Registry, today: string, budgetMs = 45_000): Promise<number> {
-  const deadline = Date.now() + budgetMs;
-  let checked = 0;
-  for (const grid of await store.listGrids()) {
-    let current = grid;
-    for (const spec of dueCells(grid, today)) {
-      if (Date.now() > deadline) return checked;
-      current = { ...current, cells: { ...current.cells, [spec.key]: await checkCell(current, spec, registry, today) } };
-      await store.saveGrid(current);
-      checked++;
-    }
-  }
-  return checked;
 }

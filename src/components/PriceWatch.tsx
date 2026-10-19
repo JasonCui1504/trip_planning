@@ -102,10 +102,10 @@ export function PriceWatch() {
     <div className="watch-page">
       <header className="watch-head">
         <div>
-          <span className="eyebrow eyebrow-dot">Checked daily</span>
+          <span className="eyebrow eyebrow-dot">Checked when you ask</span>
           <h1>Price watch</h1>
           <p className="muted">
-            Everything you're watching, re-priced once a day. Watch a flight or stay from any search result with <strong>Watch</strong>.
+            Everything you're watching, re-priced whenever you press refresh. Watch a flight or stay from any search result with <strong>Watch</strong>.
             {lastCheck && ` Last checked ${new Date(lastCheck).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`}
           </p>
         </div>
@@ -231,8 +231,8 @@ export function PriceWatch() {
         ))}
       </div>
       <p className="muted small">
-        Prices are re-checked automatically once a day while the app's server is running. Only results from a live source (flights once SerpApi is
-        connected, stays once Hotels.com is) can be watched.
+        Nothing is re-checked on its own: each refresh is one search per watched option, and adds a point to its history. Only results from a live
+        source (flights once SerpApi is connected, stays once Hotels.com is) can be watched.
       </p>
     </div>
   );

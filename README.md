@@ -32,7 +32,7 @@ git checkout claude/sleepy-rubin-8lyycm   # until this branch is merged
 npm run mac:install
 ```
 
-The script installs and builds the app. It also registers a background server that starts at login and restarts if it crashes, so Price watch keeps checking prices daily. When it's done, it opens http://localhost:8787. Then add it to the Dock:
+The script installs and builds the app. It also registers a background server that starts at login and restarts if it crashes, so the app is always there when you open it. When it's done, it opens http://localhost:8787. Then add it to the Dock:
 
 - **Safari:** with the app open, **File → Add to Dock…**
 - **Chrome:** click the install icon in the address bar, or **⋮ → Cast, save, and share → Install page as app…**. Then right-click its Dock icon and choose **Options → Keep in Dock**.
@@ -49,7 +49,6 @@ The app deploys to [Vercel](https://vercel.com)'s free Hobby plan, with a free [
 
 - **Website and server:** Vercel runs the API as a serverless function.
 - **Storage:** Upstash Redis, because Vercel doesn't keep files between requests.
-- **Daily price check:** a Vercel Cron job. The free plan allows one run a day, which is all Price watch needs.
 - **Login:** a password (`APP_PASSWORD`), so only you can see your trips or use your API credits.
 
 You do this once:
@@ -58,7 +57,6 @@ You do this once:
 2. **Add storage.** In the project, open **Storage → Create → Upstash (Redis) → Free plan**, then **Connect** it to the project. This adds `KV_REST_API_URL` and `KV_REST_API_TOKEN` for you.
 3. **Set environment variables** under **Settings → Environment Variables**:
    - `APP_PASSWORD`: the password you'll log in with (required)
-   - `CRON_SECRET`: any long random string (run `openssl rand -hex 32` in Terminal to make one)
    - `APP_TIMEZONE`: e.g. `America/Los_Angeles`
    - `SERPAPI_API_KEY`: optional, turns on live Google Flights prices
    - `RAPIDAPI_KEY`: optional, turns on live Hotels.com prices
@@ -66,7 +64,7 @@ You do this once:
 4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**, then open the `*.vercel.app` link and log in.
 5. **Add your domain.** In **Settings → Domains**, add `trips.jascui.com`. Vercel shows one DNS record to create where jascui.com's DNS lives, normally a **CNAME** named `trips` pointing to `cname.vercel-dns.com`. If jascui.com's DNS is already on Vercel, this happens automatically. HTTPS is set up for you.
 
-From then on, every push to the repo redeploys the site automatically. The daily price check runs at about 14:00 UTC (7am Pacific); change the time under `crons` in `vercel.json`.
+From then on, every push to the repo redeploys the site automatically.
 
 Data you have on your Mac (`data/trips.json`) doesn't move online automatically. Ask if you want an import button.
 
@@ -75,12 +73,12 @@ Data you have on your Mac (`data/trips.json`) doesn't move online automatically.
 - **Prices (the dashboard):** set up a *grid* once and compare every combination's cheapest price in one table, instead of opening a tab per search.
   - **Flight grids:** several departure airports × several arrival airports × several dates, e.g. BWI and DCA to SFO and SJC on four dates is 16 cells. Each cell shows the cheapest fare, the cheapest nonstop, the change since the last check, and Google Flights' "low / typical / high" read. Click a cell for the flights (with Google Flights links), your own price history, and Google's price history for that route.
   - **Hotel grids:** several places (cities or neighbourhoods) × several check-in dates on Hotels.com. Each cell shows the cheapest stay, the typical (median) price there, and the cheapest Chase Edit hotel; click for the options with Hotels.com links.
-  - **Tracking:** a grid can re-check itself every day, 2 days, 3 days or week (the daily cron job; up to ~45 seconds of searches a run, with the rest picked up next time), or only when you press **Check prices**. The form shows how many searches a check costs and roughly how many a month tracking will use. Grids are capped at 40 searches per check.
+  - **Checking:** nothing runs on a schedule. Press **Check prices** while you're planning; press it again a few days later and every cell shows how its price moved since, with a chart per cell. The form shows how many searches a check costs, and grids are capped at 40 searches per check.
 
 - **Trips:** destination, dates, travelers and budget. Every search form is pre-filled from these.
 - **Search & save:** tabs for Flights, Stays, Activities, Cars and Dining. Categories with a live source show results you can sort, filter by tag and max price, and open for details; you can also tick up to 4 results and **compare** them side by side. Categories without one link out to the same search on real sites.
 - **Workshop:** build *scenarios*, i.e. different combinations of saved flights, cars, stays and activities plus drives, and compare their total cost, cost per person, time in the air, time on the road and estimated fuel side by side. **Suggest transfers** walks each scenario in time order (land, pick up the car, check in, activities, return flight) and adds the missing drives using real road routing. The map shows the flight arcs and the actual driving routes, with "On the ground" and "Whole trip" views.
-- **Price watch:** press **Watch price** on any live flight or stay. The server re-checks each watched option once a day (and on demand), keeps a daily price history, and the dashboard shows the current price, change since the last check, change since you started watching, the low and high, and a chart with a table view.
+- **Price watch:** press **Watch price** on any live flight or stay. Press refresh to re-check every watched option (nothing runs on its own); each refresh adds a point to its price history, and the dashboard shows the current price, change since the last check, change since you started watching, the low and high, and a chart with a table view.
 - **More booking sites:** every flight and stay links to the same search on other sites (Kayak, Skyscanner, Expedia, Hotels.com, Google Hotels, Airbnb) for comparison shopping.
 - **Export to travel budget:** sends a trip to [jascui.com/travel_budget](https://www.jascui.com/travel_budget). See [below](#export-to-the-travel-budget).
 - **Setup:** a table of the steps left to connect real data, with the free API for each and whether it's done.
@@ -127,7 +125,7 @@ Each category with real data has its own source:
 | Flights | **Google Flights** via [SerpApi](https://serpapi.com): results, prices, and Google's "prices are low/typical/high" insight. SerpApi is used for flights only. | `SERPAPI_API_KEY` (free plan: 250 searches a month) |
 | Stays | **Hotels.com** via the [Hotels.com Provider API](https://rapidapi.com/tipsters/api/hotels-com-provider) on RapidAPI: nightly and total price, guest score, photo, map location, and a link straight to the hotel on Hotels.com | `RAPIDAPI_KEY` (free Basic plan) |
 | Chase Edit | [edithotelsearch.com](https://edithotelsearch.com/): the Edit hotel list for your destination, and a **Chase Edit** badge on Hotels.com results that are in it | None |
-| Price watch | The same live searches, re-run once a day | (uses the keys above) |
+| Price watch, Prices grids | The same live searches, re-run when you press refresh or Check | (uses the keys above) |
 
 How it fits together: `server/providers/index.ts` picks the provider for each category (`serpapiFlights` for flights, `hotelsComHotels` for stays) once its key is set. Every provider maps its response into the shared `Offer` shape, and hotel results then go through the Chase Edit list to get their badges. The Stays tab also lists the Edit hotels at your destination; **Check price** on one runs a Hotels.com search for that hotel by name and puts it first.
 
@@ -172,7 +170,7 @@ Everything below is free. The app's **Setup** page shows the same table.
 | 2 | Get a RapidAPI key for Hotels.com | Real Hotels.com stays, Chase Edit badges on them, hotel price watch | [Hotels.com Provider API](https://rapidapi.com/tipsters/api/hotels-com-provider/pricing) on RapidAPI | Free Basic plan (check the monthly limit on its pricing tab) | Make a RapidAPI account, subscribe to Basic, set `RAPIDAPI_KEY` to your X-RapidAPI-Key, redeploy | To do |
 | 3 | Check flights and stays against the live services | Confidence the results are mapped correctly | SerpApi, Hotels.com Provider | A few searches from the free plans | Run one flight and one hotel search for a real trip and compare with Google Flights and Hotels.com | To do |
 | 4 | Save your travel budget login (optional) | Export without typing the password each time | jascui.com travel budget | Free | Set `TRAVEL_BUDGET_USERNAME` and `TRAVEL_BUDGET_PASSWORD`, or type them in the Export dialog | To do |
-| 5 | Plan your search budget | Not running out of free searches mid-month | SerpApi, RapidAPI | Free | A flight search uses 1 SerpApi search, a hotel search 2 RapidAPI requests. Each watched price is checked daily, so keep it to a handful of watches | To do |
+| 5 | Plan your search budget | Not running out of free searches mid-month | SerpApi, RapidAPI | Free | A flight search uses 1 SerpApi search, a hotel search 2 RapidAPI requests. Nothing runs on a schedule; searches happen only when you press Search, Check prices or Refresh | To do |
 | 6 | Put the site online | trips.jascui.com | Vercel Hobby + Upstash Redis | Free plans | Already online | Done |
 | 7 | Connect activities | Real tours and attractions with prices | [Viator Partner API](https://partnerresources.viator.com/travel-commerce/affiliate/) (Basic Access) | Free: join the affiliate program; Basic Access needs no approval | Get the API key, then build `server/providers/viator.ts` and register it for `activities` | To do |
 | 8 | Connect restaurants | Real restaurants near your stay, filterable by cuisine (no prices or ratings) | [OpenStreetMap Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) | Free, no key | Build `server/providers/overpass.ts` that queries `amenity=restaurant` around the destination and register it for `dining` | To do |

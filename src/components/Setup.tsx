@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ProviderStatus } from "../../shared/types.ts";
-import { api } from "../api.ts";
+import { api, type ConnectionStatus } from "../api.ts";
 
 type StepStatus = "done" | "todo" | "skip";
 
@@ -63,12 +63,12 @@ function steps({ flightsLive, hotelsLive, savedLogin }: { flightsLive: boolean; 
       unlocks: "Not running out of free searches mid-month",
       source: "SerpApi, RapidAPI",
       cost: "Free",
-      howTo: "Each watched price is checked once a day, about 30 searches a month (60 RapidAPI requests for a hotel), so keep it to a handful of watches.",
+      howTo: "Nothing runs on its own: searches happen only when you press Search, Check prices or Refresh. A flight search is 1 SerpApi search; a hotel search 1–2 RapidAPI requests.",
       status: "todo",
     },
     {
       step: "Put the site online",
-      unlocks: "trips.jascui.com with login, storage and the daily price check",
+      unlocks: "trips.jascui.com with login and storage",
       source: "Vercel Hobby + Upstash Redis",
       url: "https://vercel.com/signup",
       cost: "Free plans",
@@ -139,6 +139,7 @@ export function Setup() {
           are the free sources to connect, in order.
         </p>
       </section>
+      <ConnectionCheck />
       <div className="card table-scroll">
         <table className="compare-table setup-table">
           <thead>
@@ -178,5 +179,40 @@ export function Setup() {
         </table>
       </div>
     </div>
+  );
+}
+
+/** Tests the API keys for real: SerpApi's check is free, Hotels.com's uses one request. */
+function ConnectionCheck() {
+  const [results, setResults] = useState<ConnectionStatus[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const run = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setResults(await api.checkConnections());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="card connection-check">
+      <div className="board-head">
+        <h2>Are the keys working?</h2>
+        <button className="btn btn-primary btn-sm" disabled={busy} onClick={run}>
+          {busy ? "Checking…" : "Check connections"}
+        </button>
+      </div>
+      <p className="muted small">Asks SerpApi how many searches you have left (free) and runs one Hotels.com place lookup (1 RapidAPI request).</p>
+      {error && <p className="error small">{error}</p>}
+      {results?.map((r) => (
+        <p key={r.name} className="small">
+          <span className={`status-chip ${r.ok ? "status-booked" : r.configured ? "status-shortlisted" : "status-idea"}`}>{r.ok ? "Working" : r.configured ? "Problem" : "Not set"}</span> <strong>{r.name}</strong>: {r.detail}
+        </p>
+      ))}
+    </section>
   );
 }

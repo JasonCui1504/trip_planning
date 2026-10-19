@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { gridCells, type GridCell, type GridCellSpec, type PriceGrid } from "../../shared/types.ts";
+import { gridCells, type GridCell, type GridCellSpec, type GridOption, type PriceGrid, type Trip } from "../../shared/types.ts";
 import { api } from "../api.ts";
 import { addDays, duration, money, shortDate, today } from "../format.ts";
 import { Icon } from "../icons.tsx";
 import { href, navigate } from "../router.ts";
 import { Modal } from "./Modal.tsx";
 import { PriceChart } from "./PriceChart.tsx";
-import { bestCell, GridForm, TRACK_LABEL } from "./Prices.tsx";
+import { bestCell, GridForm } from "./Prices.tsx";
 
 const BATCH = 3;
 
@@ -20,9 +20,11 @@ export function GridView({ id }: { id: string }) {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [trips, setTrips] = useState<Trip[]>([]);
 
   useEffect(() => {
     api.grid(id).then(setGrid).catch((e) => setError(e.message));
+    api.trips().then(setTrips).catch(() => setTrips([]));
   }, [id]);
 
   const specs = useMemo(() => (grid ? gridCells(grid) : []), [grid]);
@@ -72,7 +74,6 @@ export function GridView({ id }: { id: string }) {
             {flights
               ? `${grid.nights ? `Round trip, back ${grid.nights} day${grid.nights === 1 ? "" : "s"} later` : "One way"} · ${grid.travelers} adult${grid.travelers === 1 ? "" : "s"} · ${grid.cabin}`
               : `Hotels.com · ${grid.nights} night${grid.nights === 1 ? "" : "s"} · ${grid.travelers} guest${grid.travelers === 1 ? "" : "s"}, ${grid.rooms} room${grid.rooms === 1 ? "" : "s"}`}{" "}
-            · Re-check: {TRACK_LABEL[grid.trackEveryDays].toLowerCase()}
           </p>
         </div>
         <div className="grid-actions">
@@ -166,7 +167,7 @@ export function GridView({ id }: { id: string }) {
         {flights && " Low / typical / high is Google Flights' own read on the price."}
       </p>
 
-      {spec && <CellDetail grid={grid} spec={spec} onCheck={() => check([spec])} busy={Boolean(progress)} />}
+      {spec && <CellDetail grid={grid} spec={spec} trips={trips} onCheck={() => check([spec])} busy={Boolean(progress)} />}
 
       {editing && (
         <Modal title="Edit grid" onClose={() => setEditing(false)} wide>
@@ -185,7 +186,44 @@ export function GridView({ id }: { id: string }) {
   );
 }
 
-function CellDetail({ grid, spec, onCheck, busy }: { grid: PriceGrid; spec: GridCellSpec; onCheck: () => void; busy: boolean }) {
+/** Put a grid option on a trip, where the Workshop can mix it into plans. */
+function SaveToTrip({ grid, option, trips }: { grid: PriceGrid; option: GridOption; trips: Trip[] }) {
+  const [saved, setSaved] = useState("");
+  if (!trips.length) return null;
+  const save = async (tripId: string) => {
+    const trip = trips.find((t) => t.id === tripId)!;
+    await api.addItem(tripId, {
+      category: grid.kind,
+      status: "shortlisted",
+      title: option.title,
+      subtitle: option.subtitle,
+      start: option.start,
+      end: option.end,
+      location: option.location,
+      cost: { amount: option.total, currency: trip.currency },
+      provider: option.provider ?? (grid.kind === "flights" ? "Google Flights" : "Hotels.com"),
+      bookingUrl: option.bookingUrl,
+      points: option.points,
+      durationMinutes: option.durationMinutes,
+      details: {},
+    });
+    setSaved(trip.name);
+  };
+  return saved ? (
+    <span className="small grid-saved">Saved to {saved}</span>
+  ) : (
+    <select className="save-to-trip" value="" onChange={(e) => e.target.value && save(e.target.value)} onClick={(e) => e.stopPropagation()} aria-label="Save to trip">
+      <option value="">Save to trip…</option>
+      {trips.map((t) => (
+        <option key={t.id} value={t.id}>
+          {t.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function CellDetail({ grid, spec, trips, onCheck, busy }: { grid: PriceGrid; spec: GridCellSpec; trips: Trip[]; onCheck: () => void; busy: boolean }) {
   const cell = grid.cells[spec.key];
   const flights = grid.kind === "flights";
   const ours = (cell?.history ?? []).map((h) => ({ date: h.date, amount: h.low, available: true }));
@@ -209,7 +247,7 @@ function CellDetail({ grid, spec, onCheck, busy }: { grid: PriceGrid; spec: Grid
       {!cell?.options.length && !cell?.error && <p className="muted small">Not checked yet.</p>}
       <div className="cell-options">
         {cell?.options.map((o, i) => (
-          <a key={i} className="cell-option" href={o.bookingUrl} target="_blank" rel="noreferrer">
+          <div key={i} className="cell-option">
             <span className="piece-main">
               <span className="item-title">{o.title}</span>
               <span className="muted small">
@@ -231,11 +269,12 @@ function CellDetail({ grid, spec, onCheck, busy }: { grid: PriceGrid; spec: Grid
               <span className="muted small">
                 {money(o.unitPrice)} {o.unit}
               </span>
-              <span className="small">
+              <a className="small" href={o.bookingUrl} target="_blank" rel="noreferrer">
                 {flights ? "Google Flights" : "Hotels.com"} <Icon name="external" size={12} />
-              </span>
+              </a>
+              <SaveToTrip key={spec.key} grid={grid} option={o} trips={trips} />
             </span>
-          </a>
+          </div>
         ))}
       </div>
       <div className="cell-charts">
