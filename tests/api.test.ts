@@ -273,6 +273,40 @@ describe("price grids", () => {
     await request(app).delete(`/api/grids/${grid.id}`).expect(204);
     await request(app).get(`/api/grids/${grid.id}`).expect(404);
   });
+
+  it("watches one route every Thursday evening for the next 12 weeks, rolling forward", async () => {
+    let day = "2027-01-10"; // a Sunday
+    const { app, calls } = makeLiveApp(() => day);
+    const body = { kind: "flights", name: "DC → Bay Area", origins: "IAD, DCA, BWI", destinations: "SFO, OAK, SJC", combineAirports: true, repeat: { weekdays: [4], weeks: 12 }, departWindow: [17, 24], nights: 0 };
+    const grid = (await request(app).post("/api/grids").send(body).expect(201)).body as PriceGrid;
+    expect(grid.dates).toHaveLength(12);
+    expect(grid.dates[0]).toBe("2027-01-14");
+    expect(grid.dates.at(-1)).toBe("2027-04-01");
+    // All nine airport pairs in one search per Thursday.
+    const specs = gridCells(grid);
+    expect(specs).toHaveLength(12);
+    expect(specs[0]).toMatchObject({ key: "IAD,DCA,BWI|SFO,OAK,SJC|2027-01-14", row: "IAD/DCA/BWI → SFO/OAK/SJC" });
+
+    await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: [specs[0].key] }).expect(200);
+    const serp = calls.find((c) => c.url.host === "serpapi.com")!.url.searchParams;
+    expect([serp.get("departure_id"), serp.get("arrival_id"), serp.get("outbound_times"), serp.get("type")]).toEqual(["IAD,DCA,BWI", "SFO,OAK,SJC", "17,23", "2"]);
+
+    // A week and a bit later the first Thursday has passed: it drops off, a new one is added, and its old cell goes on the next save.
+    day = "2027-01-18";
+    const later = (await request(app).get(`/api/grids/${grid.id}`)).body as PriceGrid;
+    expect([later.dates[0], later.dates.at(-1), later.dates.length]).toEqual(["2027-01-21", "2027-04-08", 12]);
+    const rechecked = (await request(app).post(`/api/grids/${grid.id}/check`).send({ keys: [`IAD,DCA,BWI|SFO,OAK,SJC|2027-01-21`] })).body as PriceGrid;
+    expect(Object.keys(rechecked.cells)).toEqual(["IAD,DCA,BWI|SFO,OAK,SJC|2027-01-21"]);
+
+    // Switching back to picked dates, and bad input.
+    const picked = (await request(app).patch(`/api/grids/${grid.id}`).send({ repeat: null, dates: ["2027-02-04"] }).expect(200)).body as PriceGrid;
+    expect([picked.repeat, picked.dates]).toEqual([undefined, ["2027-02-04"]]);
+    await request(app).post("/api/grids").send({ ...body, repeat: { weekdays: [], weeks: 12 } }).expect(400);
+    await request(app).post("/api/grids").send({ ...body, departWindow: [18, 17] }).expect(400);
+    // Any time of day sends no time filter.
+    const anyTime = (await request(app).post("/api/grids").send({ ...body, departWindow: [0, 24] })).body as PriceGrid;
+    expect(anyTime.departWindow).toBeUndefined();
+  });
 });
 
 describe("connection check", () => {
@@ -289,6 +323,8 @@ describe("connection check", () => {
       { name: "SerpApi (Google Flights)", configured: true, ok: true, detail: "Free Plan: 231 of 250 searches left this month" },
       { name: "Hotels.com (RapidAPI)", configured: true, ok: false, detail: "You are not subscribed to this API." },
     ]);
+    expect((await request(app).get("/api/providers/usage").expect(200)).body).toEqual({ configured: true, left: 231, limit: 250, plan: "Free Plan" });
+    expect((await request(makeApp()).get("/api/providers/usage")).body).toEqual({ configured: false });
     const none = await request(makeApp()).get("/api/providers/check");
     expect(none.body.every((r: { configured: boolean }) => !r.configured)).toBe(true);
   });

@@ -31,8 +31,9 @@ async function serpapi(env: ProviderEnv, params: Record<string, string | number 
 /** "2026-11-18 08:50" → "2026-11-18T08:50" */
 const isoLocal = (t: string) => t.replace(" ", "T").slice(0, 16);
 
-/** Google Flights wants IATA codes; accept a code or a city we know. */
+/** Google Flights wants IATA codes; accept a code or a city we know, or a comma-separated list of them (searched together). */
 export function toIata(text: string): string {
+  if (text.includes(",")) return text.split(",").map((part) => toIata(part)).join(",");
   const t = text.trim();
   if (/^[A-Za-z]{3}$/.test(t)) return t.toUpperCase();
   const place = resolvePlace(t);
@@ -152,6 +153,15 @@ export function mapGoogleFlights(data: Record<string, unknown>, params: FlightSe
   return { offers, insights, priceInsight };
 }
 
+/**
+ * Google Flights' departure-time filter, e.g. "17,23" = leaving 5:00 PM–11:59 PM.
+ * Its second number is the last hour included, so [17, 24) becomes "17,23".
+ */
+export function outboundTimes(window?: [number, number]): string | undefined {
+  if (!window || (window[0] <= 0 && window[1] >= 24)) return undefined;
+  return `${window[0]},${window[1] - 1}`;
+}
+
 export const serpapiFlights: SearchProvider<"flights"> = {
   name: "Google Flights (SerpApi)",
   requiredKeys: ["SERPAPI_API_KEY"],
@@ -165,6 +175,7 @@ export const serpapiFlights: SearchProvider<"flights"> = {
       type: params.returnDate ? 1 : 2,
       adults: params.adults,
       travel_class: TRAVEL_CLASS[params.cabin],
+      outbound_times: outboundTimes(params.departWindow),
     });
     return mapGoogleFlights(data, params);
   },

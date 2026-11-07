@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ProviderStatus } from "../shared/types.ts";
-import { api, UNAUTHORIZED_EVENT } from "./api.ts";
+import { api, UNAUTHORIZED_EVENT, USAGE_EVENT, type SerpApiUsage } from "./api.ts";
 import { Login } from "./components/Login.tsx";
 import { Home } from "./components/Home.tsx";
 import { PriceWatch } from "./components/PriceWatch.tsx";
@@ -27,6 +27,15 @@ export function App() {
     if (signedIn) api.providers().then(setProviders).catch(() => setProviders([]));
   }, [signedIn]);
 
+  const [usage, setUsage] = useState<SerpApiUsage | null>(null);
+  useEffect(() => {
+    if (!signedIn) return;
+    const load = () => api.usage().then(setUsage).catch(() => setUsage(null));
+    load();
+    window.addEventListener(USAGE_EVENT, load);
+    return () => window.removeEventListener(USAGE_EVENT, load);
+  }, [signedIn]);
+
   if (!auth) return <div className="app" />;
   if (!auth.authenticated) return <Login onSuccess={() => setAuth({ authRequired: true, authenticated: true })} />;
 
@@ -39,7 +48,7 @@ export function App() {
           <span className="brand-mark">
             <Icon name="plane" size={16} />
           </span>
-          Trip Workshop
+          <span className="brand-text">Trip Workshop</span>
         </a>
         <nav className="topnav">
           <a className={`topnav-link ${route.page === "prices" ? "active" : ""}`} href={href({ page: "prices" })}>
@@ -63,6 +72,7 @@ export function App() {
             {liveCount ? `${liveCount}/${providers.length} categories live` : "No live data connected"}
           </span>
         )}
+        {usage?.configured && <UsageCounter usage={usage} />}
         {auth.authRequired && (
           <button
             className="btn btn-ghost btn-sm"
@@ -79,5 +89,23 @@ export function App() {
         {route.page === "trip" ? <Workspace key={route.id} id={route.id} tab={route.tab} /> : route.page === "watch" ? <PriceWatch /> : route.page === "setup" ? <Setup /> : route.page === "prices" ? <Prices id={route.id} /> : <Home />}
       </main>
     </div>
+  );
+}
+
+/** SerpApi searches left this month (each flight search, and each date on a flight grid, uses one). */
+function UsageCounter({ usage }: { usage: SerpApiUsage }) {
+  if (usage.error || usage.left === undefined)
+    return (
+      <span className="usage-counter usage-low" title={usage.error ?? "SerpApi didn't say how many searches are left"}>
+        <span className="usage-suffix">Flight searches: </span>?
+      </span>
+    );
+  const low = usage.limit ? usage.left / usage.limit < 0.15 : usage.left < 30;
+  return (
+    <span className={`usage-counter ${low ? "usage-low" : ""}`} title={`SerpApi${usage.plan ? ` (${usage.plan})` : ""}: flight searches left this month. Each date on a flight grid uses one.`}>
+      <strong>{usage.left.toLocaleString()}</strong>
+      {usage.limit ? ` / ${usage.limit.toLocaleString()}` : ""}
+      <span className="usage-suffix"> searches left</span>
+    </span>
   );
 }
