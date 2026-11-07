@@ -26,7 +26,7 @@ import { searchPlaces } from "./places.ts";
 import { config, type KeyName } from "./config.ts";
 import { checkCell, pruneCells, validateGrid, withDates } from "./grids.ts";
 import { checkConnections, serpApiAccount } from "./providers/check.ts";
-import { exportTrip, TravelBudgetError, type TravelBudgetOptions } from "./travelBudget.ts";
+import { exportTrip, TravelBudgetError, travelBudgetBase, type TravelBudgetOptions } from "./travelBudget.ts";
 import { searchValidators, validateTripInput, ValidationError } from "./validate.ts";
 
 const DEFAULT_CHECKLIST = [
@@ -54,7 +54,7 @@ export interface AppDeps {
   auth?: Auth;
   /** Injectable clock so tests can simulate several days of price checks. */
   today?: () => string;
-  /** The jascui.com travel budget that trips export to; a saved login is optional. */
+  /** The travel budget (travel.jascui.com) that trips export to; a saved login is optional. */
   travelBudget?: TravelBudgetOptions;
   /** API keys and the fetch used to test them (Setup → Check connections). */
   keys?: Record<KeyName, string>;
@@ -110,7 +110,7 @@ function validateScenarios(value: unknown, trip: Trip): Scenario[] {
   });
 }
 
-export function createApp({ store, registry, maps, edit, auth = createAuth({}), today = localToday, travelBudget = { url: "https://www.jascui.com" }, keys = config.keys, providerFetch = fetch }: AppDeps) {
+export function createApp({ store, registry, maps, edit, auth = createAuth({}), today = localToday, travelBudget = { url: "https://travel.jascui.com" }, keys = config.keys, providerFetch = fetch }: AppDeps) {
   const app = express();
   // Behind Vercel's proxy: trust X-Forwarded-* for the client IP and https.
   app.set("trust proxy", true);
@@ -333,10 +333,10 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
     res.status(204).end();
   });
 
-  // ----- Export to the jascui.com travel budget -----
+  // ----- Export to the travel budget (travel.jascui.com) -----
 
   app.get("/api/travel-budget", (_req, res) => {
-    res.json({ url: travelBudget.url, savedLogin: Boolean(travelBudget.username && travelBudget.password) });
+    res.json({ url: travelBudgetBase(travelBudget.url), savedLogin: Boolean(travelBudget.username && travelBudget.password) });
   });
 
   app.post("/api/trips/:id/export/travel-budget", async (req, res) => {

@@ -51,9 +51,9 @@ function steps({ flightsLive, hotelsLive, savedLogin }: { flightsLive: boolean; 
     },
     {
       step: "Save your travel budget login (optional)",
-      unlocks: "Export to jascui.com/travel_budget without typing the password each time",
-      source: "jascui.com travel budget",
-      url: "https://www.jascui.com/travel_budget",
+      unlocks: "Export to travel.jascui.com without typing the password each time",
+      source: "travel.jascui.com travel budget",
+      url: "https://travel.jascui.com",
       cost: "Free",
       howTo: "Set TRAVEL_BUDGET_USERNAME and TRAVEL_BUDGET_PASSWORD in Vercel's environment variables, or just type them in the Export dialog on a trip.",
       status: savedLogin ? "done" : "todo",

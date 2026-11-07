@@ -5,7 +5,7 @@ import { Icon } from "../icons.tsx";
 import { Modal } from "./Modal.tsx";
 
 /**
- * Send the trip to the travel budget on jascui.com. A login typed here is
+ * Send the trip to the travel budget at travel.jascui.com. A login typed here is
  * used for this export only; the server can also keep one in its env vars.
  */
 export function ExportModal({ trip, plan: initialPlan = "", onDone, onClose }: { trip: Trip; plan?: string; onDone: (trip: Trip) => void; onClose: () => void }) {
@@ -72,7 +72,7 @@ export function ExportModal({ trip, plan: initialPlan = "", onDone, onClose }: {
                 . What the last export added is replaced; anything you added on the travel budget stays.
               </>
             ) : (
-              <>Creates this trip on {info ? new URL(info.url).host : "jascui.com"}/travel_budget.</>
+              <>Creates this trip on {info ? new URL(info.url).host : "travel.jascui.com"}.</>
             )}{" "}
             Dated items go on the calendar ({scheduled.length}), stays and cars fill each day, and ideas or undated items ({ideas}) go to the Ideas list.
           </p>

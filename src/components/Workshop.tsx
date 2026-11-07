@@ -254,7 +254,7 @@ function ScenarioEditor({ trip, scenario, totals, update, onDelete, onExport }: 
           onChange={(e) => setName(e.target.value)}
           onBlur={() => name.trim() && name !== scenario.name && update({ name: name.trim() })}
         />
-        <button className="btn btn-secondary btn-sm" onClick={onExport} title="Send this plan, with its own schedule, to your travel budget at jascui.com">
+        <button className="btn btn-secondary btn-sm" onClick={onExport} title="Send this plan, with its own schedule, to your travel budget at travel.jascui.com">
           <Icon name="external" size={14} /> Export this plan
         </button>
         <button className="icon-btn" aria-label="Delete scenario" title="Delete scenario" onClick={() => confirm(`Delete "${scenario.name}"?`) && onDelete()}>

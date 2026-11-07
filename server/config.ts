@@ -10,9 +10,9 @@ export const config = {
   /** Set to require a password (needed when the app is on the internet). */
   appPassword: env("APP_PASSWORD"),
   sessionSecret: env("SESSION_SECRET"),
-  /** jascui.com's travel budget, where trips can be exported. */
+  /** The travel budget at travel.jascui.com, where trips can be exported. */
   travelBudget: {
-    url: env("TRAVEL_BUDGET_URL") || "https://www.jascui.com",
+    url: env("TRAVEL_BUDGET_URL") || "https://travel.jascui.com",
     username: env("TRAVEL_BUDGET_USERNAME"),
     password: env("TRAVEL_BUDGET_PASSWORD"),
   },

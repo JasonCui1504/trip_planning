@@ -2,17 +2,17 @@ import type { TravelBudgetLink, Trip, TripItem } from "../shared/types.ts";
 import { addDays } from "./dates.ts";
 
 /**
- * Export a trip to the travel budget on jascui.com (/travel_budget), using
+ * Export a trip to the travel budget at travel.jascui.com, using
  * that site's own JSON API with its username/password login. Nothing on that
  * site changes; this only calls endpoints its own pages use:
  *
- *   POST /api/travel/auth            sign in (session cookie)
- *   POST /api/travel/trips           new trip { name, start_date, end_date }
- *   PUT  /api/travel/trips/:id       name, dates, doc
- *   POST /api/travel/events          a calendar block on one day, in half hours
- *   PUT  /api/travel/days            a day's stay and rental car
- *   POST /api/travel/ideas           a line in the trip's Ideas list
- *   DELETE /api/travel/events/:id, /api/travel/ideas/:id
+ *   POST /api/auth            sign in (session cookie)
+ *   POST /api/trips           new trip { name, start_date, end_date }
+ *   PUT  /api/trips/:id       name, dates, doc
+ *   POST /api/events          a calendar block on one day, in half hours
+ *   PUT  /api/days            a day's stay and rental car
+ *   POST /api/ideas           a line in the trip's Ideas list
+ *   DELETE /api/events/:id, /api/ideas/:id
  *
  * Mapping: dated flights, activities, dinners and custom items become calendar
  * events; stays fill each night's accommodation, cars each day's rental car;
@@ -182,11 +182,21 @@ export class TravelBudgetError extends Error {
   }
 }
 
+/**
+ * The travel budget's base URL. It used to live at www.jascui.com/travel_budget
+ * and moved to travel.jascui.com on 2026-11-07, so an old TRAVEL_BUDGET_URL
+ * still pointing at jascui.com is sent to the new host.
+ */
+export function travelBudgetBase(url: string): string {
+  const base = url.replace(/\/+$/, "");
+  return /^https?:\/\/(www\.)?jascui\.com$/i.test(base) ? "https://travel.jascui.com" : base;
+}
+
 /** A signed-in client for the travel budget's API. */
 async function connect({ url, username, password, fetch: fetchImpl = fetch }: TravelBudgetOptions) {
   if (!username || !password) throw new TravelBudgetError("Enter your travel budget username and password.");
-  const base = url.replace(/\/+$/, "");
-  const login = await fetchImpl(`${base}/api/travel/auth`, {
+  const base = travelBudgetBase(url);
+  const login = await fetchImpl(`${base}/api/auth`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -211,7 +221,7 @@ async function connect({ url, username, password, fetch: fetchImpl = fetch }: Tr
 
   /** Whether a trip still exists (it may have been deleted on the site since the last export). */
   async function tripExists(id: number): Promise<boolean> {
-    const res = await fetchImpl(`${base}/travel_budget/trips/${id}`, { headers: { Cookie: cookie! }, redirect: "manual", signal: AbortSignal.timeout(20_000) });
+    const res = await fetchImpl(`${base}/trips/${id}`, { headers: { Cookie: cookie! }, redirect: "manual", signal: AbortSignal.timeout(20_000) });
     return res.status === 200;
   }
 
@@ -227,36 +237,36 @@ export async function exportTrip(trip: Trip, options: TravelBudgetOptions): Prom
   let tripId: number;
   if (previous) {
     tripId = previous.tripId;
-    await call("PUT", `/api/travel/trips/${tripId}`, plan.trip);
+    await call("PUT", `/api/trips/${tripId}`, plan.trip);
   } else {
-    tripId = (await call<{ id: number }>("POST", "/api/travel/trips", plan.trip)).id;
+    tripId = (await call<{ id: number }>("POST", "/api/trips", plan.trip)).id;
     // The doc is written once, so notes added on the site aren't overwritten by later exports.
-    await call("PUT", `/api/travel/trips/${tripId}`, { ...plan.trip, doc: plan.doc });
+    await call("PUT", `/api/trips/${tripId}`, { ...plan.trip, doc: plan.doc });
   }
 
-  const link: TravelBudgetLink = { tripId, url: `${base}/travel_budget/trips/${tripId}`, eventIds: [], ideaIds: [], days: [], exportedAt: new Date().toISOString() };
+  const link: TravelBudgetLink = { tripId, url: `${base}/trips/${tripId}`, eventIds: [], ideaIds: [], days: [], exportedAt: new Date().toISOString() };
   // Rows from the last export that are still on the site until they're deleted below.
   const oldEvents = [...(previous?.eventIds ?? [])];
   const oldIdeas = [...(previous?.ideaIds ?? [])];
   try {
     if (previous) {
       while (oldEvents.length) {
-        await call("DELETE", `/api/travel/events/${oldEvents[0]}`);
+        await call("DELETE", `/api/events/${oldEvents[0]}`);
         oldEvents.shift();
       }
       while (oldIdeas.length) {
-        await call("DELETE", `/api/travel/ideas/${oldIdeas[0]}`);
+        await call("DELETE", `/api/ideas/${oldIdeas[0]}`);
         oldIdeas.shift();
       }
       const blank = Object.fromEntries(DAY_FIELDS.map((f) => [f, ""]));
       for (const date of previous.days.filter((d) => !plan.days.some((p) => p.date === d))) {
-        await call("PUT", "/api/travel/days", { trip_id: tripId, date, ...blank });
+        await call("PUT", "/api/days", { trip_id: tripId, date, ...blank });
       }
     }
-    for (const e of plan.events) link.eventIds.push((await call<{ id: number }>("POST", "/api/travel/events", { trip_id: tripId, ...e })).id);
-    for (const text of plan.ideas) link.ideaIds.push((await call<{ id: number }>("POST", "/api/travel/ideas", { trip_id: tripId, text })).id);
+    for (const e of plan.events) link.eventIds.push((await call<{ id: number }>("POST", "/api/events", { trip_id: tripId, ...e })).id);
+    for (const text of plan.ideas) link.ideaIds.push((await call<{ id: number }>("POST", "/api/ideas", { trip_id: tripId, text })).id);
     for (const d of plan.days) {
-      await call("PUT", "/api/travel/days", { trip_id: tripId, ...d });
+      await call("PUT", "/api/days", { trip_id: tripId, ...d });
       link.days.push(d.date);
     }
   } catch (err) {

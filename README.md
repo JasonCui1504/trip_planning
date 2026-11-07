@@ -60,7 +60,7 @@ You do this once:
    - `APP_TIMEZONE`: e.g. `America/Los_Angeles`
    - `SERPAPI_API_KEY`: optional, turns on live Google Flights prices
    - `RAPIDAPI_KEY`: optional, turns on live Hotels.com prices
-   - `TRAVEL_BUDGET_USERNAME` / `TRAVEL_BUDGET_PASSWORD`: optional, your jascui.com travel budget login for **Export to travel budget** (otherwise you type it in the export dialog)
+   - `TRAVEL_BUDGET_USERNAME` / `TRAVEL_BUDGET_PASSWORD`: optional, your travel.jascui.com travel budget login for **Export to travel budget** (otherwise you type it in the export dialog)
 4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**, then open the `*.vercel.app` link and log in.
 5. **Add your domain.** In **Settings → Domains**, add `trips.jascui.com`. Vercel shows one DNS record to create where jascui.com's DNS lives, normally a **CNAME** named `trips` pointing to `cname.vercel-dns.com`. If jascui.com's DNS is already on Vercel, this happens automatically. HTTPS is set up for you.
 
@@ -84,7 +84,7 @@ Data you have on your Mac (`data/trips.json`) doesn't move online automatically.
 - **Workshop:** build *scenarios*, i.e. different combinations of saved flights, cars, stays and activities plus drives, and compare their total cost, cost per person, time in the air, time on the road and estimated fuel side by side. **Suggest transfers** walks each scenario in time order (land, pick up the car, check in, activities, return flight) and adds the missing drives using real road routing. The map shows the flight arcs and the actual driving routes, with "On the ground" and "Whole trip" views.
 - **Price watch:** press **Watch price** on any live flight or stay. Press refresh to re-check every watched option (nothing runs on its own); each refresh adds a point to its price history, and the dashboard shows the current price, change since the last check, change since you started watching, the low and high, and a chart with a table view.
 - **More booking sites:** every flight and stay links to the same search on other sites (Kayak, Skyscanner, Expedia, Hotels.com, Google Hotels, Airbnb) for comparison shopping.
-- **Export to travel budget:** sends a trip to [jascui.com/travel_budget](https://www.jascui.com/travel_budget). See [below](#export-to-the-travel-budget).
+- **Export to travel budget:** sends a trip to [travel.jascui.com](https://travel.jascui.com). See [below](#export-to-the-travel-budget).
 - **Setup:** a table of the steps left to connect real data, with the free API for each and whether it's done.
 - **Trip board:** a panel that stays next to the search results and holds everything you've saved, grouped as *Idea → Shortlisted → Booked*. **Add your own** records things booked elsewhere (trains, tickets, reservations).
 - **Book flow:** **Book** opens the provider in a new tab. A dialog then asks for the confirmation number and the final price, and marks the item as booked.
@@ -108,7 +108,7 @@ server/
   maps.ts                  Geocoding (OpenStreetMap Nominatim) + driving routes (OSRM, or Google with a key)
   places.ts                36 common destinations: airport code + coordinates, city centre (autocomplete, offline geocoding)
   watch.ts                 Daily price-watch job
-  travelBudget.ts          Export a trip to jascui.com/travel_budget through its API
+  travelBudget.ts          Export a trip to travel.jascui.com through its API
   config.ts                Env vars / API keys
   providers/
     index.ts               Provider registry: uses a live provider when its keys are set, otherwise returns no results
@@ -146,7 +146,7 @@ Not used:
 
 ## Export to the travel budget
 
-On any trip, **Export to travel budget** sends it to [jascui.com/travel_budget](https://www.jascui.com/travel_budget). It signs in with your travel budget username and password and uses that site's own API, so nothing on the photography site had to change. Type the login in the dialog (used once, never stored), or save it as `TRAVEL_BUDGET_USERNAME` / `TRAVEL_BUDGET_PASSWORD`.
+On any trip, **Export to travel budget** sends it to [travel.jascui.com](https://travel.jascui.com). It signs in with your travel budget username and password and uses that site's own API. (An old `TRAVEL_BUDGET_URL` of `https://www.jascui.com`, from before the travel budget moved, is treated as travel.jascui.com.) Type the login in the dialog (used once, never stored), or save it as `TRAVEL_BUDGET_USERNAME` / `TRAVEL_BUDGET_PASSWORD`.
 
 | Trip Workshop | Travel budget |
 | --- | --- |
@@ -173,7 +173,7 @@ Everything below is free. The app's **Setup** page shows the same table.
 | 1 | Get a SerpApi key | Real Google Flights results, prices and price watch | [SerpApi](https://serpapi.com/users/sign_up) (flights only) | Free plan: 250 searches a month | Sign up, copy the key, set `SERPAPI_API_KEY` in Vercel's environment variables (or `.env`), redeploy | To do |
 | 2 | Get a RapidAPI key for Hotels.com | Real Hotels.com stays, Chase Edit badges on them, hotel price watch | [Hotels.com Provider API](https://rapidapi.com/tipsters/api/hotels-com-provider/pricing) on RapidAPI | Free Basic plan (check the monthly limit on its pricing tab) | Make a RapidAPI account, subscribe to Basic, set `RAPIDAPI_KEY` to your X-RapidAPI-Key, redeploy | To do |
 | 3 | Check flights and stays against the live services | Confidence the results are mapped correctly | SerpApi, Hotels.com Provider | A few searches from the free plans | Run one flight and one hotel search for a real trip and compare with Google Flights and Hotels.com | To do |
-| 4 | Save your travel budget login (optional) | Export without typing the password each time | jascui.com travel budget | Free | Set `TRAVEL_BUDGET_USERNAME` and `TRAVEL_BUDGET_PASSWORD`, or type them in the Export dialog | To do |
+| 4 | Save your travel budget login (optional) | Export without typing the password each time | travel.jascui.com travel budget | Free | Set `TRAVEL_BUDGET_USERNAME` and `TRAVEL_BUDGET_PASSWORD`, or type them in the Export dialog | To do |
 | 5 | Plan your search budget | Not running out of free searches mid-month | SerpApi, RapidAPI | Free | A flight search uses 1 SerpApi search, a hotel search 2 RapidAPI requests. Nothing runs on a schedule; searches happen only when you press Search, Check prices or Refresh | To do |
 | 6 | Put the site online | trips.jascui.com | Vercel Hobby + Upstash Redis | Free plans | Already online | Done |
 | 7 | Connect activities | Real tours and attractions with prices | [Viator Partner API](https://partnerresources.viator.com/travel-commerce/affiliate/) (Basic Access) | Free: join the affiliate program; Basic Access needs no approval | Get the API key, then build `server/providers/viator.ts` and register it for `activities` | To do |

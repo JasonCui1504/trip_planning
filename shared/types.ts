@@ -290,7 +290,7 @@ export interface Trip {
   items: TripItem[];
   checklist: ChecklistItem[];
   scenarios: Scenario[];
-  /** Where this trip was last exported on the jascui.com travel budget. */
+  /** Where this trip was last exported on the travel budget (travel.jascui.com). */
   travelBudget?: TravelBudgetLink;
   createdAt: string;
   updatedAt: string;

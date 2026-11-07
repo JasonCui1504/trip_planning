@@ -11,7 +11,7 @@ import { createMaps, decodePolyline } from "../server/maps.ts";
 import { editPage } from "./fixtures/edit.ts";
 import { googleFlights } from "./fixtures/serpapi.ts";
 import { hotelsComHotelRegions, hotelsComRegions, hotelsComSearch } from "./fixtures/hotelscom.ts";
-import { buildPlan } from "../server/travelBudget.ts";
+import { buildPlan, travelBudgetBase } from "../server/travelBudget.ts";
 import { destinationOf, variantsOf } from "../src/scenario.ts";
 import { createRegistry } from "../server/providers/index.ts";
 import type { Scenario, Watch } from "../shared/types.ts";
@@ -490,7 +490,7 @@ describe("export to the travel budget", () => {
     expect(plan.doc).toContain("- [x] ANA · Nonstop — $1,800 — conf ABC123");
   });
 
-  /** A stand-in for jascui.com's /api/travel routes, with the same login and validation rules. */
+  /** A stand-in for travel.jascui.com's API routes, with the same login and validation rules. */
   function fakeTravelBudget() {
     const db = { trips: new Map<number, Record<string, unknown>>(), events: new Map<number, Record<string, unknown>>(), ideas: new Map<number, Record<string, unknown>>(), days: new Map<string, Record<string, unknown>>() };
     let nextId = 1;
@@ -499,12 +499,12 @@ describe("export to the travel budget", () => {
       const url = new URL(String(input));
       const method = init?.method ?? "GET";
       const body = init?.body ? JSON.parse(String(init.body)) : {};
-      if (url.pathname === "/api/travel/auth") {
+      if (url.pathname === "/api/auth") {
         return body.username === "jason" && body.password === "pw" ? json({ ok: true }, 200, { "Set-Cookie": "travel_session=jason:1:abc; HttpOnly; Path=/" }) : json({ error: "Invalid username or password" }, 401);
       }
       if (new Headers(init?.headers).get("Cookie") !== "travel_session=jason:1:abc") return json({ error: "Unauthorized" }, 401);
-      const [, , , table, id] = url.pathname.split("/");
-      if (url.pathname.startsWith("/travel_budget/trips/")) return new Response("", { status: db.trips.has(Number(url.pathname.split("/")[3])) ? 200 : 404 });
+      if (url.pathname.startsWith("/trips/")) return new Response("", { status: db.trips.has(Number(url.pathname.split("/")[2])) ? 200 : 404 });
+      const [, , table, id] = url.pathname.split("/");
       if (table === "days") {
         if (!db.trips.has(body.trip_id)) return json({ error: "That person or trip doesn't exist" }, 400);
         const key = `${body.trip_id}:${body.date}`;
@@ -527,20 +527,27 @@ describe("export to the travel budget", () => {
 
   const makeExportApp = (fetchImpl: typeof fetch, login: { username?: string; password?: string } = {}) => {
     const edit = fakeEdit();
-    return createApp({ store: new TripStore(null), registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, travelBudget: { url: "https://www.jascui.test", fetch: fetchImpl, ...login } });
+    return createApp({ store: new TripStore(null), registry: createRegistry(noKeys, { edit }), maps: createMaps({ offline: true }), edit, travelBudget: { url: "https://travel.jascui.test", fetch: fetchImpl, ...login } });
   };
+
+  it("sends an old jascui.com travel budget URL to travel.jascui.com", () => {
+    expect(travelBudgetBase("https://www.jascui.com/")).toBe("https://travel.jascui.com");
+    expect(travelBudgetBase("https://jascui.com")).toBe("https://travel.jascui.com");
+    expect(travelBudgetBase("https://travel.jascui.com/")).toBe("https://travel.jascui.com");
+    expect(travelBudgetBase("http://localhost:3200")).toBe("http://localhost:3200");
+  });
 
   it("creates the trip, then replaces only what it wrote on re-export", async () => {
     const { db, fetchImpl } = fakeTravelBudget();
     const app = makeExportApp(fetchImpl);
-    expect((await request(app).get("/api/travel-budget").expect(200)).body).toEqual({ url: "https://www.jascui.test", savedLogin: false });
+    expect((await request(app).get("/api/travel-budget").expect(200)).body).toEqual({ url: "https://travel.jascui.test", savedLogin: false });
     const created = (await request(app).post("/api/trips").send({ ...tripInput, startDate: "2027-04-01", endDate: "2027-04-04" })).body as Trip;
     const hotel = (await request(app).post(`/api/trips/${created.id}/items`).send({ category: "hotels", title: "Andaz Tokyo", status: "booked", start: "2027-04-02T15:00", end: "2027-04-04T11:00" })).body as TripItem;
     await request(app).post(`/api/trips/${created.id}/items`).send({ category: "activities", title: "teamLab", start: "2027-04-03T10:00" });
     await request(app).post(`/api/trips/${created.id}/items`).send({ category: "custom", title: "JR Pass", status: "idea" });
 
     const first = (await request(app).post(`/api/trips/${created.id}/export/travel-budget`).send({ username: "jason", password: "pw" }).expect(200)).body as Trip;
-    expect(first.travelBudget).toMatchObject({ url: `https://www.jascui.test/travel_budget/trips/${first.travelBudget!.tripId}`, days: ["2027-04-02", "2027-04-03"] });
+    expect(first.travelBudget).toMatchObject({ url: `https://travel.jascui.test/trips/${first.travelBudget!.tripId}`, days: ["2027-04-02", "2027-04-03"] });
     expect(db.trips.get(first.travelBudget!.tripId)).toMatchObject({ name: "Tokyo spring", start_date: "2027-04-01", doc: expect.stringContaining("## From Trip Workshop") });
     expect([...db.events.values()]).toEqual([expect.objectContaining({ title: "teamLab", date: "2027-04-03", start_hour: 10, end_hour: 13, status: "not_booked" })]);
     expect([...db.ideas.values()]).toEqual([expect.objectContaining({ text: "JR Pass" })]);
