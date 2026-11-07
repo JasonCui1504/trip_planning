@@ -24,8 +24,8 @@ import { ProviderError, type Registry } from "./providers/index.ts";
 import { checkWatch, localToday, refreshWatches } from "./watch.ts";
 import { searchPlaces } from "./places.ts";
 import { config, type KeyName } from "./config.ts";
-import { checkCell, validateGrid } from "./grids.ts";
-import { checkConnections } from "./providers/check.ts";
+import { checkCell, pruneCells, validateGrid, withDates } from "./grids.ts";
+import { checkConnections, serpApiAccount } from "./providers/check.ts";
 import { exportTrip, TravelBudgetError, type TravelBudgetOptions } from "./travelBudget.ts";
 import { searchValidators, validateTripInput, ValidationError } from "./validate.ts";
 
@@ -144,6 +144,11 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
     res.json(await checkConnections(keys, providerFetch));
   });
 
+  // Searches left this month on SerpApi, for the counter in the top bar. SerpApi doesn't charge for this lookup.
+  app.get("/api/providers/usage", async (_req, res) => {
+    res.json(await serpApiAccount(keys.SERPAPI_API_KEY, providerFetch));
+  });
+
   app.get("/api/places", (req, res) => {
     res.json(searchPlaces(String(req.query.q ?? "")).map(({ code, city, country, airport }) => ({ code, city, country, airport })));
   });
@@ -184,18 +189,19 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
 
   // ----- Prices dashboard: grids of routes/areas × dates -----
 
+  // Repeating grids get their dates worked out from today on every read.
   const loadGrid = async (id: string) => {
     const grid = await store.getGrid(id);
     if (!grid) throw new NotFound(`Grid ${id} not found`);
-    return grid;
+    return withDates(grid, today());
   };
 
   app.get("/api/grids", async (_req, res) => {
-    res.json(await store.listGrids());
+    res.json((await store.listGrids()).map((g) => withDates(g, today())));
   });
 
   app.post("/api/grids", async (req, res) => {
-    res.status(201).json(await store.saveGrid(validateGrid(req.body ?? {})));
+    res.status(201).json(await store.saveGrid(validateGrid(req.body ?? {}, undefined, today())));
   });
 
   app.get("/api/grids/:id", async (req, res) => {
@@ -203,7 +209,7 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
   });
 
   app.patch("/api/grids/:id", async (req, res) => {
-    res.json(await store.saveGrid(validateGrid(req.body ?? {}, await loadGrid(req.params.id))));
+    res.json(await store.saveGrid(validateGrid(req.body ?? {}, await loadGrid(req.params.id), today())));
   });
 
   app.delete("/api/grids/:id", async (req, res) => {
@@ -220,7 +226,7 @@ export function createApp({ store, registry, maps, edit, auth = createAuth({}), 
     const results = await Promise.all(specs.map(async (s) => [s.key, await checkCell(grid, s, registry, today())] as const));
     // Re-read before saving so cells checked by another request in the meantime aren't lost.
     const latest = await loadGrid(grid.id);
-    res.json(await store.saveGrid({ ...latest, cells: { ...latest.cells, ...Object.fromEntries(results) } }));
+    res.json(await store.saveGrid(pruneCells({ ...latest, cells: { ...latest.cells, ...Object.fromEntries(results) } })));
   });
 
   // ----- Price watch -----

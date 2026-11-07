@@ -17,6 +17,9 @@ import type {
 } from "../shared/types.ts";
 
 export const UNAUTHORIZED_EVENT = "tw:unauthorized";
+/** Fired after anything that may have used SerpApi searches, so the counter in the top bar refreshes. */
+export const USAGE_EVENT = "tw:usage";
+export const usageChanged = () => window.dispatchEvent(new Event(USAGE_EVENT));
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -41,9 +44,10 @@ export const api = {
 
   providers: () => request<ProviderStatus[]>("GET", "/api/providers"),
   checkConnections: () => request<ConnectionStatus[]>("GET", "/api/providers/check"),
+  usage: () => request<SerpApiUsage>("GET", "/api/providers/usage"),
   places: (q: string) => request<Place[]>("GET", `/api/places?q=${encodeURIComponent(q)}`),
   search: <C extends Category>(category: C, params: SearchParamsMap[C]) =>
-    request<SearchResponse>("POST", `/api/search/${category}`, params),
+    request<SearchResponse>("POST", `/api/search/${category}`, params).finally(() => category === "flights" && usageChanged()),
 
   trips: () => request<Trip[]>("GET", "/api/trips"),
   trip: (id: string) => request<Trip>("GET", `/api/trips/${id}`),
@@ -74,8 +78,8 @@ export const api = {
 
   watches: () => request<Watch[]>("GET", "/api/watches"),
   watch: <C extends Category>(category: C, params: SearchParamsMap[C], offerId: string, tripId?: string) =>
-    request<Watch>("POST", "/api/watches", { category, params, offerId, tripId }),
-  refreshWatches: () => request<Watch[]>("POST", "/api/watches/refresh"),
+    request<Watch>("POST", "/api/watches", { category, params, offerId, tripId }).finally(usageChanged),
+  refreshWatches: () => request<Watch[]>("POST", "/api/watches/refresh").finally(usageChanged),
   unwatch: (id: string) => request<void>("DELETE", `/api/watches/${id}`),
 };
 
@@ -85,4 +89,12 @@ export interface ConnectionStatus {
   configured: boolean;
   ok: boolean;
   detail: string;
+}
+
+export interface SerpApiUsage {
+  configured: boolean;
+  left?: number;
+  limit?: number;
+  plan?: string;
+  error?: string;
 }

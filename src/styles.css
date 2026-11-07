@@ -496,3 +496,24 @@ img.thumb { object-fit: cover; border: 1px solid var(--border); }
 .login-page { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
 .login-card { width: min(360px, 100%); display: grid; gap: 1rem; padding: 1.8rem; }
 .login-card h1 { font-size: 2rem; font-weight: 300; }
+
+/* ---------- SerpApi searches left (top bar) ---------- */
+.usage-counter { font-size: 0.75rem; color: var(--muted); white-space: nowrap; padding: 0.3rem 0.65rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.usage-counter strong { color: var(--text); font-weight: 600; }
+.usage-low, .usage-low strong { color: var(--short); border-color: var(--short); }
+@media (max-width: 640px) {
+  .usage-counter { font-size: 0.7rem; padding: 0.25rem 0.5rem; }
+  .usage-suffix, .brand-text { display: none; }
+}
+
+/* ---------- Grid form: repeating dates, time window ---------- */
+.mode-toggle { display: inline-flex; gap: 0.4rem; margin-bottom: 0.6rem; }
+.weekday-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0; }
+.repeat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.repeat-row input[type="number"] { width: 4.5rem; }
+.check-row { display: flex; flex-direction: row; align-items: flex-start; gap: 0.5rem; font-size: 0.85rem; text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--text); }
+.price-grid-tall { width: auto; min-width: 320px; }
+.price-grid-tall .grid-cell { min-width: 220px; min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.7rem; }
+.check-row input { width: auto; margin-top: 0.2rem; }
+.mode-toggle { display: flex; margin-top: 0.35rem; }
+.repeat-row .muted { text-transform: none; letter-spacing: normal; font-weight: 400; }

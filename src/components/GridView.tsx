@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { gridCells, type GridCell, type GridCellSpec, type GridOption, type PriceGrid, type Trip } from "../../shared/types.ts";
-import { api } from "../api.ts";
-import { addDays, duration, money, shortDate, today } from "../format.ts";
+import { api, usageChanged } from "../api.ts";
+import { addDays, daysBetween, duration, money, shortDate, today } from "../format.ts";
 import { Icon } from "../icons.tsx";
 import { href, navigate } from "../router.ts";
 import { Modal } from "./Modal.tsx";
 import { PriceChart } from "./PriceChart.tsx";
-import { bestCell, GridForm } from "./Prices.tsx";
+import { bestCell, GridForm, scheduleLabel, windowLabel } from "./Prices.tsx";
 
 const BATCH = 3;
 
@@ -54,6 +54,7 @@ export function GridView({ id }: { id: string }) {
       setError((e as Error).message);
     } finally {
       setProgress(null);
+      usageChanged();
     }
   };
 
@@ -61,6 +62,43 @@ export function GridView({ id }: { id: string }) {
   const rowBest = (row: string) => Math.min(...specs.filter((s) => s.row === row).map((s) => latest(grid.cells[s.key])?.low ?? Infinity));
   const dateBest = (date: string) => Math.min(...specs.filter((s) => s.date === date).map((s) => latest(grid.cells[s.key])?.low ?? Infinity));
   const flights = grid.kind === "flights";
+  // More dates than routes reads better as a column of dates.
+  const transpose = grid.dates.length > rows.length;
+  const dateHead = (d: string) => (
+    <>
+      {weekday(d)} {shortDate(d)}
+      {grid.nights > 0 && <span className="muted small block">→ {shortDate(addDays(d, grid.nights))}</span>}
+    </>
+  );
+  const cellAt = (row: string, date: string) => {
+    const s = specs.find((x) => x.row === row && x.date === date)!;
+    const cell = grid.cells[s.key];
+    const now = latest(cell);
+    const before = previous(cell);
+    const t = now && hi > lo ? (now.low - lo) / (hi - lo) : 0;
+    const change = now && before ? now.low - before.low : 0;
+    return (
+      <td key={`${row}|${date}`}>
+        <button
+          className={`grid-cell ${selected === s.key ? "active" : ""} ${best?.key === s.key ? "best" : ""}`}
+          style={now ? { background: `color-mix(in srgb, var(--booked) ${Math.round(28 * (1 - t))}%, transparent)` } : undefined}
+          onClick={() => setSelected(selected === s.key ? null : s.key)}
+          title={cell?.error ?? (now ? `Checked ${shortDate(now.date)}` : "Not checked yet")}
+        >
+          {now ? <span className="grid-price">{money(now.low)}</span> : <span className="muted">{s.date < today() ? "Past" : "—"}</span>}
+          {change !== 0 && <span className={`grid-change ${change < 0 ? "down" : "up"}`}>{change < 0 ? "▼" : "▲"} {money(Math.abs(change))}</span>}
+          {now?.alt !== undefined && <span className="muted small">{flights ? "Nonstop" : "Chase Edit"} {money(now.alt)}</span>}
+          {!flights && now?.median !== undefined && <span className="muted small">Typical {money(now.median)}</span>}
+          {cell?.level && <span className={`tag grid-level level-${cell.level}`}>{cell.level}</span>}
+          {cell?.error && <span className="warn small">⚠ {cell.error.length > 30 ? "Failed" : cell.error}</span>}
+        </button>
+      </td>
+    );
+  };
+
+  // When this grid was last checked, from the most recent check of any cell.
+  const lastChecked = specs.map((s) => latest(grid.cells[s.key])?.date).filter((d): d is string => Boolean(d)).sort().at(-1);
+  const sinceChecked = lastChecked ? daysBetween(lastChecked, today()) : undefined;
 
   return (
     <div className="home grid-view">
@@ -72,8 +110,19 @@ export function GridView({ id }: { id: string }) {
           <h1>{grid.name}</h1>
           <p className="muted">
             {flights
-              ? `${grid.nights ? `Round trip, back ${grid.nights} day${grid.nights === 1 ? "" : "s"} later` : "One way"} · ${grid.travelers} adult${grid.travelers === 1 ? "" : "s"} · ${grid.cabin}`
-              : `Hotels.com · ${grid.nights} night${grid.nights === 1 ? "" : "s"} · ${grid.travelers} guest${grid.travelers === 1 ? "" : "s"}, ${grid.rooms} room${grid.rooms === 1 ? "" : "s"}`}{" "}
+              ? [
+                  grid.nights ? `Round trip, back ${grid.nights} day${grid.nights === 1 ? "" : "s"} later` : "One way",
+                  scheduleLabel(grid),
+                  windowLabel(grid.departWindow),
+                  `${grid.travelers} adult${grid.travelers === 1 ? "" : "s"}`,
+                  grid.cabin,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : `Hotels.com · ${scheduleLabel(grid)} · ${grid.nights} night${grid.nights === 1 ? "" : "s"} · ${grid.travelers} guest${grid.travelers === 1 ? "" : "s"}, ${grid.rooms} room${grid.rooms === 1 ? "" : "s"}`}
+          </p>
+          <p className="muted small">
+            {sinceChecked === undefined ? "Not checked yet" : sinceChecked === 0 ? "Last checked today" : `Last checked ${sinceChecked} day${sinceChecked === 1 ? "" : "s"} ago`}
           </p>
         </div>
         <div className="grid-actions">
@@ -105,62 +154,59 @@ export function GridView({ id }: { id: string }) {
       )}
 
       <div className="card table-scroll">
-        <table className="price-grid">
-          <thead>
-            <tr>
-              <th>{flights ? "Route" : "Where"}</th>
-              {grid.dates.map((d) => (
-                <th key={d}>
-                  {weekday(d)} {shortDate(d)}
-                  {grid.nights > 0 && <span className="muted small block">→ {shortDate(addDays(d, grid.nights))}</span>}
-                </th>
-              ))}
-              <th>Best</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row}>
-                <th>{row}</th>
-                {grid.dates.map((date) => {
-                  const s = specs.find((x) => x.row === row && x.date === date)!;
-                  const cell = grid.cells[s.key];
-                  const now = latest(cell);
-                  const before = previous(cell);
-                  const t = now && hi > lo ? (now.low - lo) / (hi - lo) : 0;
-                  const change = now && before ? now.low - before.low : 0;
-                  return (
-                    <td key={date}>
-                      <button
-                        className={`grid-cell ${selected === s.key ? "active" : ""} ${best?.key === s.key ? "best" : ""}`}
-                        style={now ? { background: `color-mix(in srgb, var(--booked) ${Math.round(28 * (1 - t))}%, transparent)` } : undefined}
-                        onClick={() => setSelected(selected === s.key ? null : s.key)}
-                        title={cell?.error ?? (now ? `Checked ${shortDate(now.date)}` : "Not checked yet")}
-                      >
-                        {now ? <span className="grid-price">{money(now.low)}</span> : <span className="muted">{s.date < today() ? "Past" : "—"}</span>}
-                        {change !== 0 && <span className={`grid-change ${change < 0 ? "down" : "up"}`}>{change < 0 ? "▼" : "▲"} {money(Math.abs(change))}</span>}
-                        {now?.alt !== undefined && <span className="muted small">{flights ? "Nonstop" : "Chase Edit"} {money(now.alt)}</span>}
-                        {!flights && now?.median !== undefined && <span className="muted small">Typical {money(now.median)}</span>}
-                        {cell?.level && <span className={`tag grid-level level-${cell.level}`}>{cell.level}</span>}
-                        {cell?.error && <span className="warn small">⚠ {cell.error.length > 30 ? "Failed" : cell.error}</span>}
-                      </button>
-                    </td>
-                  );
-                })}
-                <td className="grid-best">{Number.isFinite(rowBest(row)) ? money(rowBest(row)) : "—"}</td>
+        {transpose ? (
+          // One route over many dates (e.g. every Thursday): dates run down the page.
+          <table className="price-grid price-grid-tall">
+            <thead>
+              <tr>
+                <th>Date</th>
+                {rows.map((row) => (
+                  <th key={row}>{row}</th>
+                ))}
+                {rows.length > 1 && <th>Best</th>}
               </tr>
-            ))}
-            <tr>
-              <th>Best</th>
-              {grid.dates.map((d) => (
-                <td key={d} className="grid-best">
-                  {Number.isFinite(dateBest(d)) ? money(dateBest(d)) : "—"}
-                </td>
+            </thead>
+            <tbody>
+              {grid.dates.map((date) => (
+                <tr key={date}>
+                  <th>{dateHead(date)}</th>
+                  {rows.map((row) => cellAt(row, date))}
+                  {rows.length > 1 && <td className="grid-best">{Number.isFinite(dateBest(date)) ? money(dateBest(date)) : "—"}</td>}
+                </tr>
               ))}
-              <td />
-            </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        ) : (
+          <table className="price-grid">
+            <thead>
+              <tr>
+                <th>{flights ? "Route" : "Where"}</th>
+                {grid.dates.map((d) => (
+                  <th key={d}>{dateHead(d)}</th>
+                ))}
+                <th>Best</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row}>
+                  <th>{row}</th>
+                  {grid.dates.map((date) => cellAt(row, date))}
+                  <td className="grid-best">{Number.isFinite(rowBest(row)) ? money(rowBest(row)) : "—"}</td>
+                </tr>
+              ))}
+              <tr>
+                <th>Best</th>
+                {grid.dates.map((d) => (
+                  <td key={d} className="grid-best">
+                    {Number.isFinite(dateBest(d)) ? money(dateBest(d)) : "—"}
+                  </td>
+                ))}
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        )}
       </div>
       <p className="muted small">
         Click a cell for the options and its price history. Green is cheaper; ▲▼ is the change since the previous check.

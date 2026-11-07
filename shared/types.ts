@@ -18,6 +18,8 @@ export interface FlightSearch {
   returnDate?: string;
   adults: number;
   cabin: "economy" | "premium" | "business" | "first";
+  /** Only flights leaving in this window: [from hour, to hour), 0–24, local to the departure airport. */
+  departWindow?: [number, number];
 }
 
 export interface HotelSearch {
@@ -378,8 +380,33 @@ export interface PriceGrid {
   travelers: number;
   rooms: number;
   cabin: FlightSearch["cabin"];
+  /**
+   * Rolling dates instead of fixed ones: every chosen weekday (0 = Sunday) over the
+   * next `weeks` weeks, counted from the day you check. When set, `dates` is filled
+   * in from it by the server each time the grid is read.
+   */
+  repeat?: GridRepeat;
+  /** Flights: only flights leaving in this window, [from hour, to hour). */
+  departWindow?: [number, number];
+  /** Flights: search all origins → all destinations as one route (one search per date) instead of every pair. */
+  combineAirports?: boolean;
   cells: Record<string, GridCell>;
   createdAt: string;
+}
+
+export interface GridRepeat {
+  weekdays: number[];
+  weeks: number;
+}
+
+/** The dates a repeating grid covers, starting today. */
+export function repeatDates(repeat: GridRepeat, today: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < repeat.weeks * 7; i++) {
+    const date = addDaysTo(today, i);
+    if (repeat.weekdays.includes(new Date(`${date}T00:00:00Z`).getUTCDay())) out.push(date);
+  }
+  return out;
 }
 
 export interface GridOption {
@@ -445,11 +472,24 @@ export function gridCells(grid: PriceGrid): GridCellSpec[] {
   const out: GridCellSpec[] = [];
   for (const date of grid.dates) {
     if (grid.kind === "flights") {
-      for (const origin of grid.origins)
-        for (const destination of grid.destinations) {
-          const params: FlightSearch = { origin, destination, departDate: date, returnDate: grid.nights > 0 ? addDaysTo(date, grid.nights) : undefined, adults: grid.travelers, cabin: grid.cabin };
-          out.push({ key: `${origin}|${destination}|${date}`, row: `${origin} → ${destination}`, date, params });
-        }
+      const flight = (origin: string, destination: string): FlightSearch => ({
+        origin,
+        destination,
+        departDate: date,
+        returnDate: grid.nights > 0 ? addDaysTo(date, grid.nights) : undefined,
+        adults: grid.travelers,
+        cabin: grid.cabin,
+        ...(grid.departWindow && { departWindow: grid.departWindow }),
+      });
+      if (grid.combineAirports) {
+        // Google Flights takes several airports on each side in one search.
+        const origin = grid.origins.join(",");
+        const destination = grid.destinations.join(",");
+        out.push({ key: `${origin}|${destination}|${date}`, row: `${grid.origins.join("/")} → ${grid.destinations.join("/")}`, date, params: flight(origin, destination) });
+      } else
+        for (const origin of grid.origins)
+          for (const destination of grid.destinations)
+            out.push({ key: `${origin}|${destination}|${date}`, row: `${origin} → ${destination}`, date, params: flight(origin, destination) });
     } else {
       for (const location of grid.destinations) {
         const params: HotelSearch = { location, checkIn: date, checkOut: addDaysTo(date, Math.max(1, grid.nights)), guests: grid.travelers, rooms: grid.rooms };
