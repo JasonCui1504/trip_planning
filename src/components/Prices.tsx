@@ -43,10 +43,40 @@ export function Prices({ id }: { id?: string }) {
   return <GridList />;
 }
 
+const EXPANDED_KEY = "tw:prices-expanded";
+
+/** Which grids are expanded on the list, remembered in this browser. */
+function useExpanded() {
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const save = (next: Set<string>) => {
+    setExpanded(next);
+    try {
+      localStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+    } catch {
+      // Private mode or storage blocked: it just won't be remembered.
+    }
+  };
+  const toggle = (id: string) => {
+    const next = new Set(expanded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    save(next);
+  };
+  return { expanded, toggle, setAll: (ids: string[]) => save(new Set(ids)) };
+}
+
 function GridList() {
   const [grids, setGrids] = useState<PriceGrid[] | null>(null);
   const [creating, setCreating] = useState<PriceGrid["kind"] | null>(null);
   const [error, setError] = useState("");
+  const { expanded, toggle, setAll } = useExpanded();
+  const allExpanded = Boolean(grids?.length) && grids!.every((g) => expanded.has(g.id));
 
   useEffect(() => {
     api.grids().then(setGrids).catch((e) => setError(e.message));
@@ -72,17 +102,41 @@ function GridList() {
         </div>
       </section>
       {error && <p className="error">{error}</p>}
+      {grids && grids.length > 0 && (
+        <div className="grid-list-tools">
+          <button className="btn btn-ghost btn-sm" onClick={() => setAll(allExpanded ? [] : grids.map((g) => g.id))}>
+            <Icon name="chevronDown" size={14} className={allExpanded ? "flip" : ""} /> {allExpanded ? "Collapse all" : "Expand all"}
+          </button>
+        </div>
+      )}
       <section className="grid-list">
         {grids?.length === 0 && <p className="muted">No grids yet.</p>}
         {grids?.map((g) => {
+          if (expanded.has(g.id))
+            return (
+              // A single route (dates down the page) only needs half the width; wider grids take a full row.
+              <div key={g.id} className={new Set(gridCells(g).map((c) => c.row)).size === 1 ? "grid-list-half" : "grid-list-wide"}>
+                <GridView id={g.id} initial={g} embedded onCollapse={() => {
+                    toggle(g.id);
+                    api.grids().then(setGrids).catch(() => {});
+                  }} onDeleted={() => setGrids(grids.filter((x) => x.id !== g.id))} />
+              </div>
+            );
           const best = bestCell(g);
           const cells = gridCells(g).length;
           return (
-            <a key={g.id} className="card grid-card" href={href({ page: "prices", id: g.id })}>
-              <span className="eyebrow">
-                <Icon name={g.kind === "flights" ? "plane" : "bed"} size={12} /> {g.kind === "flights" ? "Flights" : "Hotels.com"}
+            <div key={g.id} className="card grid-card">
+              <span className="grid-card-top">
+                <span className="eyebrow">
+                  <Icon name={g.kind === "flights" ? "plane" : "bed"} size={12} /> {g.kind === "flights" ? "Flights" : "Hotels.com"}
+                </span>
+                <button className="icon-btn" aria-label={`Expand ${g.name}`} title="Show the table here" aria-expanded="false" onClick={() => toggle(g.id)}>
+                  <Icon name="chevronDown" size={16} />
+                </button>
               </span>
-              <span className="trip-card-name">{g.name}</span>
+              <a className="trip-card-name grid-card-link" href={href({ page: "prices", id: g.id })}>
+                {g.name}
+              </a>
               <span className="muted small">
                 {g.kind === "flights" ? `${g.origins.join(g.combineAirports ? "/" : ", ")} → ${g.destinations.join(g.combineAirports ? "/" : ", ")}` : g.destinations.join(" · ")}
               </span>
@@ -90,7 +144,7 @@ function GridList() {
                 {[scheduleLabel(g), g.kind === "flights" ? windowLabel(g.departWindow) : "", `${cells} searches per check`].filter(Boolean).join(" · ")}
               </span>
               {best && <span className="grid-card-best">From {money(best.low)}</span>}
-            </a>
+            </div>
           );
         })}
       </section>
