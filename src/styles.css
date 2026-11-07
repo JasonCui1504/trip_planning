@@ -441,8 +441,8 @@ img.thumb { object-fit: cover; border: 1px solid var(--border); }
 .schedule-row .piece-main { flex: 1 1 200px; min-width: 0; }
 .schedule-times { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .schedule-times input { width: auto; }
-.grid-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
-.grid-card { display: grid; gap: 0.3rem; text-decoration: none; color: inherit; }
+.grid-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; align-items: start; }
+.grid-card { display: grid; align-content: start; gap: 0.3rem; text-decoration: none; color: inherit; }
 .grid-card:hover { border-color: var(--primary-dim); }
 .grid-card-best { color: var(--booked); font-weight: 500; }
 .grid-view { gap: 1.2rem; }
