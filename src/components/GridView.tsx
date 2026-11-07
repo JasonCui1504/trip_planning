@@ -14,8 +14,12 @@ const latest = (cell?: GridCell) => cell?.history.at(-1);
 const previous = (cell?: GridCell) => cell?.history.at(-2);
 const weekday = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: "short" });
 
-export function GridView({ id }: { id: string }) {
-  const [grid, setGrid] = useState<PriceGrid | null>(null);
+/**
+ * One grid: its table, Check button and cell details. `embedded` shows it inside the
+ * Prices list (expanded in place) instead of on its own page.
+ */
+export function GridView({ id, initial, embedded, onCollapse, onDeleted }: { id: string; initial?: PriceGrid; embedded?: boolean; onCollapse?: () => void; onDeleted?: () => void }) {
+  const [grid, setGrid] = useState<PriceGrid | null>(initial ?? null);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -23,9 +27,9 @@ export function GridView({ id }: { id: string }) {
   const [trips, setTrips] = useState<Trip[]>([]);
 
   useEffect(() => {
-    api.grid(id).then(setGrid).catch((e) => setError(e.message));
+    if (!initial) api.grid(id).then(setGrid).catch((e) => setError(e.message));
     api.trips().then(setTrips).catch(() => setTrips([]));
-  }, [id]);
+  }, [id, initial]);
 
   const specs = useMemo(() => (grid ? gridCells(grid) : []), [grid]);
   const rows = useMemo(() => [...new Set(specs.map((s) => s.row))], [specs]);
@@ -101,13 +105,21 @@ export function GridView({ id }: { id: string }) {
   const sinceChecked = lastChecked ? daysBetween(lastChecked, today()) : undefined;
 
   return (
-    <div className="home grid-view">
+    <div className={embedded ? "card grid-view grid-embedded" : "home grid-view"}>
       <section className="grid-head">
         <div>
-          <a className="back-link" href={href({ page: "prices" })}>
-            <Icon name="arrowLeft" size={14} /> All grids
-          </a>
-          <h1>{grid.name}</h1>
+          {embedded ? (
+            <h2>
+              <a href={href({ page: "prices", id: grid.id })}>{grid.name}</a>
+            </h2>
+          ) : (
+            <>
+              <a className="back-link" href={href({ page: "prices" })}>
+                <Icon name="arrowLeft" size={14} /> All grids
+              </a>
+              <h1>{grid.name}</h1>
+            </>
+          )}
           <p className="muted">
             {flights
               ? [
@@ -139,11 +151,17 @@ export function GridView({ id }: { id: string }) {
             onClick={async () => {
               if (!confirm(`Delete "${grid.name}" and its price history?`)) return;
               await api.deleteGrid(grid.id);
-              navigate({ page: "prices" });
+              if (onDeleted) onDeleted();
+              else navigate({ page: "prices" });
             }}
           >
             <Icon name="trash" size={16} />
           </button>
+          {onCollapse && (
+            <button className="icon-btn" aria-label="Collapse" title="Collapse" aria-expanded="true" onClick={onCollapse}>
+              <Icon name="chevronDown" size={16} className="flip" />
+            </button>
+          )}
         </div>
       </section>
       {error && <p className="error">{error}</p>}
@@ -208,7 +226,7 @@ export function GridView({ id }: { id: string }) {
           </table>
         )}
       </div>
-      <p className="muted small">
+      <p className={`muted small ${embedded ? "grid-hint-embedded" : ""}`}>
         Click a cell for the options and its price history. Green is cheaper; ▲▼ is the change since the previous check.
         {flights && " Low / typical / high is Google Flights' own read on the price."}
       </p>
