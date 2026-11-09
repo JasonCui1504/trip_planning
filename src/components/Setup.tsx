@@ -68,7 +68,7 @@ function steps({ flightsLive, hotelsLive, savedLogin }: { flightsLive: boolean; 
     },
     {
       step: "Put the site online",
-      unlocks: "trips.jascui.com with login and storage",
+      unlocks: "planning.jascui.com with login and storage",
       source: "Vercel Hobby + Upstash Redis",
       url: "https://vercel.com/signup",
       cost: "Free plans",

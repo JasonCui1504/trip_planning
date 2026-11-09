@@ -43,7 +43,7 @@ It opens in its own window with the Trip Workshop icon.
 - **Removing:** run `npm run mac:uninstall`, then drag the icon out of the Dock. Your trips stay in `data/`.
 - **Logs:** `~/Library/Logs/TripWorkshop/server.log`
 
-## Put it online at trips.jascui.com (free)
+## Put it online at planning.jascui.com (free)
 
 The app deploys to [Vercel](https://vercel.com)'s free Hobby plan, with a free [Upstash Redis](https://upstash.com) database for storage:
 
@@ -62,7 +62,7 @@ You do this once:
    - `RAPIDAPI_KEY`: optional, turns on live Hotels.com prices
    - `TRAVEL_BUDGET_USERNAME` / `TRAVEL_BUDGET_PASSWORD`: optional, your travel.jascui.com travel budget login for **Export to travel budget** (otherwise you type it in the export dialog)
 4. **Redeploy.** Go to **Deployments → ⋯ → Redeploy**, then open the `*.vercel.app` link and log in.
-5. **Add your domain.** In **Settings → Domains**, add `trips.jascui.com`. Vercel shows one DNS record to create where jascui.com's DNS lives, normally a **CNAME** named `trips` pointing to `cname.vercel-dns.com`. If jascui.com's DNS is already on Vercel, this happens automatically. HTTPS is set up for you.
+5. **Add your domain.** In **Settings → Domains**, add `planning.jascui.com`. Vercel shows one DNS record to create where jascui.com's DNS lives, normally a **CNAME** named `planning` pointing to `cname.vercel-dns.com`. If jascui.com's DNS is already on Vercel, this happens automatically. HTTPS is set up for you.
 
 From then on, every push to the repo redeploys the site automatically.
 
@@ -175,7 +175,7 @@ Everything below is free. The app's **Setup** page shows the same table.
 | 3 | Check flights and stays against the live services | Confidence the results are mapped correctly | SerpApi, Hotels.com Provider | A few searches from the free plans | Run one flight and one hotel search for a real trip and compare with Google Flights and Hotels.com | To do |
 | 4 | Save your travel budget login (optional) | Export without typing the password each time | travel.jascui.com travel budget | Free | Set `TRAVEL_BUDGET_USERNAME` and `TRAVEL_BUDGET_PASSWORD`, or type them in the Export dialog | To do |
 | 5 | Plan your search budget | Not running out of free searches mid-month | SerpApi, RapidAPI | Free | A flight search uses 1 SerpApi search, a hotel search 2 RapidAPI requests. Nothing runs on a schedule; searches happen only when you press Search, Check prices or Refresh | To do |
-| 6 | Put the site online | trips.jascui.com | Vercel Hobby + Upstash Redis | Free plans | Already online | Done |
+| 6 | Put the site online | planning.jascui.com | Vercel Hobby + Upstash Redis | Free plans | Already online | Done |
 | 7 | Connect activities | Real tours and attractions with prices | [Viator Partner API](https://partnerresources.viator.com/travel-commerce/affiliate/) (Basic Access) | Free: join the affiliate program; Basic Access needs no approval | Get the API key, then build `server/providers/viator.ts` and register it for `activities` | To do |
 | 8 | Connect restaurants | Real restaurants near your stay, filterable by cuisine (no prices or ratings) | [OpenStreetMap Overpass API](https://wiki.openstreetmap.org/wiki/Overpass_API) | Free, no key | Build `server/providers/overpass.ts` that queries `amenity=restaurant` around the destination and register it for `dining` | To do |
 | 9 | Car rentals | Real rental prices | None found that is free | Rental price APIs are paid or partner-only | Keep using the Kayak, Expedia and Rentalcars links on the Cars tab, then record the booking with **Add your own** | No free option |
